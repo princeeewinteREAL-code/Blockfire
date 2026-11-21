@@ -2,7 +2,7 @@
 
 A fast, blocky shooter you play in your browser: slide, strafe, bunny-hop and wall-jump through short matches, earn coins, and collect rare weapon skins.
 
-**Status: Phase 1 — movement sandbox.** You can run around the Training Grounds map and race the timed parkour course. Weapons arrive in Phase 2, online multiplayer in Phase 3.
+**Status: early build.** You can run around the Training Grounds map, race the timed parkour course, and browse all 34 weapons in the holographic Armory (every rarity skin, hologram or real model). Shooting arrives in Phase 2, online multiplayer in Phase 3.
 
 ## Play it on your computer
 
@@ -23,17 +23,22 @@ Then open the address it prints (usually http://localhost:5173) and click **Play
 | Space | Jump. Hold it to bunny-hop |
 | C | Crouch. Press while running to slide |
 | Left Shift | Walk silently |
-| G | Hold the Snake Pistol (enables up to 3 wall-jumps) |
-| 1 / 2 / 3 | Hold a 100% / 125% / 65% speed weapon |
+| 1 / 2 / 3 | Primary / secondary / melee weapon (each sets your move speed) |
 | R | Back to the last checkpoint |
 | Esc | Pause |
 
-Every key can be changed in **Settings**.
+Every key can be changed in **Settings**, along with graphics quality (Low, Medium, High, Ultra).
+
+Wall-jumps work while a Snake weapon is in your hand: the default loadout's secondary (key 2) is the Snake Pistol.
+
+## Graphics
+
+Blocky shapes with realistic lighting: physically based materials (metal reflects, neon glows), sky reflections, bloom, soft shadows, ACES tone mapping and a ring of voxel mountains. Quality presets keep it smooth on older laptops.
 
 ## Project layout
 
 ```
-shared/   Code used by both the game and the server: movement physics, map format, maps
+shared/   Code used by both the game and the server: movement physics, weapons + rarities, map format, maps
 client/   The game you play in the browser (Three.js + Vite)
 server/   The online game server and API (Phase 3 and 4)
 ```

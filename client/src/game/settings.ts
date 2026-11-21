@@ -1,7 +1,7 @@
 export type Action =
   | 'forward' | 'back' | 'left' | 'right'
   | 'jump' | 'crouch' | 'walk'
-  | 'respawn' | 'snake' | 'speed1' | 'speed2' | 'speed3';
+  | 'respawn' | 'slot1' | 'slot2' | 'slot3';
 
 export const ACTION_LABELS: Record<Action, string> = {
   forward: 'Move forward',
@@ -12,13 +12,13 @@ export const ACTION_LABELS: Record<Action, string> = {
   crouch: 'Crouch / slide',
   walk: 'Walk (silent)',
   respawn: 'Back to checkpoint',
-  snake: 'Toggle Snake Pistol (wall-jumps)',
-  speed1: 'Hold a 100% speed gun',
-  speed2: 'Hold Super Pistols (125%)',
-  speed3: 'Hold Dual Heavy MGs (65%)',
+  slot1: 'Primary weapon',
+  slot2: 'Secondary weapon',
+  slot3: 'Melee weapon',
 };
 
 export interface Settings {
+  quality: import('./graphics.js').Quality;
   sensitivity: number;
   fov: number;
   volume: number;
@@ -28,6 +28,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  quality: 'high',
   sensitivity: 1,
   fov: 100,
   volume: 0.6,
@@ -42,14 +43,13 @@ export const DEFAULT_SETTINGS: Settings = {
     crouch: 'KeyC',
     walk: 'ShiftLeft',
     respawn: 'KeyR',
-    snake: 'KeyG',
-    speed1: 'Digit1',
-    speed2: 'Digit2',
-    speed3: 'Digit3',
+    slot1: 'Digit1',
+    slot2: 'Digit2',
+    slot3: 'Digit3',
   },
 };
 
-const STORAGE_KEY = 'blockfire.settings.v1';
+const STORAGE_KEY = 'blockfire.settings.v2';
 
 /** Load settings from this browser. Falls back to defaults if storage is unavailable. */
 export function loadSettings(): Settings {

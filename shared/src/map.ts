@@ -52,6 +52,14 @@ export interface MapDef {
   zones: Zone[];
   /** Sky and fog colours. */
   sky: { top: string; bottom: string; fog: string };
+  /** A pool of lava: touching it sends you back to your checkpoint. */
+  lava?: { y: number; x0: number; x1: number; z0: number; z1: number };
+}
+
+/** Is this feet position touching the map's lava? */
+export function inLava(map: MapDef, x: number, y: number, z: number): boolean {
+  const l = map.lava;
+  return !!l && y <= l.y + 0.1 && x >= l.x0 && x <= l.x1 && z >= l.z0 && z <= l.z1;
 }
 
 /** Height of a ramp's surface at (x, z), or null if (x, z) is outside it. */

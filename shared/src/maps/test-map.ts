@@ -107,5 +107,6 @@ export const TEST_MAP: MapDef = {
   boxes,
   ramps,
   zones,
-  sky: { top: '#5aa0ff', bottom: '#cfe6ff', fog: '#cfe6ff' },
+  sky: { top: '#2f74d8', bottom: '#cde2f6', fog: '#cde2f6' },
+  lava: { y: -6, x0: -55, x1: -15, z0: -55, z1: 20 },
 };
