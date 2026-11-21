@@ -1,9 +1,10 @@
 import './style.css';
 import * as THREE from 'three';
 import {
-  RARITIES, RARITY_BY_ID, TEST_MAP, WEAPON_BY_ID, bodyTtk, weaponsInSlot, type RarityId, type Slot, type WeaponDef,
+  NEON_YARD, RARITIES, RARITY_BY_ID, TEST_MAP, WEAPON_BY_ID, bodyTtk, weaponsInSlot, type RarityId, type Slot, type WeaponDef,
 } from '@blockfire/shared';
 import { Game, formatTime } from './game/game.js';
+import { FfaGame } from './game/ffa.js';
 import { Input } from './game/input.js';
 import { Sfx } from './game/audio.js';
 import { animateCharacter, buildCharacter } from './game/character.js';
@@ -13,7 +14,7 @@ import { ArmoryScene } from './game/armory.js';
 import { loadLoadout, rarityOf, saveLoadout, type Loadout } from './game/loadout.js';
 import {
   ACTION_LABELS, DEFAULT_SETTINGS, keyLabel, loadBest, loadSettings, saveSettings,
-  type Action, type Settings,
+  type Action, type BotLevel, type Settings,
 } from './game/settings.js';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -72,9 +73,11 @@ const menuCam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
 const armory = new ArmoryScene(gfx.renderer, canvas);
 
 // ---------- State ----------
-type Mode = 'menu' | 'playing' | 'paused' | 'armory';
+type Mode = 'menu' | 'playing' | 'paused' | 'armory' | 'ended';
 let mode: Mode = 'menu';
 let game: Game | null = null;
+let ffa: FfaGame | null = null;
+let kind: 'parkour' | 'ffa' = 'ffa';
 let usingFallbackLook = false;
 
 const show = (id: string, on: boolean) => { $(id).hidden = !on; };
@@ -93,20 +96,25 @@ function refreshMenuBest(): void {
   $('menu-best').textContent = best !== null ? `Best parkour time: ${formatTime(best)}` : '';
 }
 
-async function startPlaying(): Promise<void> {
+async function startPlaying(next?: 'parkour' | 'ffa', fresh = false): Promise<void> {
   sfx.unlock();
   sfx.click();
-  if (!game) {
-    game = new Game(TEST_MAP, input, sfx, getSettings, gfx, getLoadout);
-    resize();
+  if (next) kind = next;
+  if (kind === 'parkour') {
+    if (!game) game = new Game(TEST_MAP, input, sfx, getSettings, gfx, getLoadout);
+    game.refreshWeapon();
+  } else {
+    if (!ffa || fresh || ffa.over) ffa = new FfaGame(NEON_YARD, input, sfx, getSettings, gfx, getLoadout, settings.botLevel, 7);
+    ffa.refreshWeapon();
   }
-  game.refreshWeapon();
+  resize();
   input.setEnabled(true);
   const locked = await input.lock();
   usingFallbackLook = !locked;
-  if (!locked) toast('Your browser blocked mouse capture here. Hold a mouse button and drag to look. Esc pauses.', 6000);
+  if (!locked) toast('Your browser blocked mouse capture here. Hold the left mouse button and drag to look. Esc pauses.', 6000);
   mode = 'playing';
-  show('menu', false); show('pause', false); show('hud', true);
+  show('menu', false); show('pause', false); show('match-end', false);
+  show('hud', kind === 'parkour'); show('ffa-hud', kind === 'ffa');
 }
 
 function pause(): void {
@@ -121,7 +129,7 @@ function toMenu(): void {
   mode = 'menu';
   input.setEnabled(false);
   input.unlock();
-  show('pause', false); show('hud', false); show('armory', false); show('menu', true);
+  show('pause', false); show('hud', false); show('ffa-hud', false); show('match-end', false); show('armory', false); show('menu', true);
   refreshMenuBest();
 }
 
@@ -133,8 +141,25 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape' && mode === 'armory') toMenu();
 });
 
-$('play').addEventListener('click', () => void startPlaying());
+$('play').addEventListener('click', () => void startPlaying('parkour'));
+$('play-ffa').addEventListener('click', () => void startPlaying('ffa', true));
 $('resume').addEventListener('click', () => void startPlaying());
+$('end-again').addEventListener('click', () => void startPlaying('ffa', true));
+$('end-menu').addEventListener('click', () => { sfx.click(); toMenu(); });
+
+function renderLevels(): void {
+  document.querySelectorAll<HTMLButtonElement>('.lvl').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['level'] === settings.botLevel)));
+}
+document.querySelectorAll<HTMLButtonElement>('.lvl').forEach((b) => {
+  b.addEventListener('click', () => {
+    sfx.unlock();
+    sfx.click();
+    settings = { ...settings, botLevel: b.dataset['level'] as BotLevel };
+    saveSettings(settings);
+    renderLevels();
+  });
+});
+renderLevels();
 $('quit').addEventListener('click', () => { sfx.click(); toMenu(); });
 
 // ---------- Armory UI ----------
@@ -258,6 +283,7 @@ $('arm-equip').addEventListener('click', () => {
   loadout = { ...loadout, [armWeapon.slot]: armWeapon.id, rarity: { ...loadout.rarity, [armWeapon.id]: armRarity } };
   saveLoadout(loadout);
   game?.refreshWeapon();
+  ffa = null; // the next Free For All match uses the new loadout
   renderArmoryList();
   renderArmoryPanel();
   toast(`${armWeapon.name} (${RARITY_BY_ID[armRarity].name}) equipped as your ${armWeapon.slot} weapon`, 2500);
@@ -300,6 +326,7 @@ function applyQuality(q: Quality): void {
   refreshMaterials(menuScene, gfx.shadowSize);
   refreshMaterials(armory.scene, gfx.shadowSize);
   if (game) refreshMaterials(game.world.scene, gfx.shadowSize);
+  if (ffa) refreshMaterials(ffa.world.scene, gfx.shadowSize);
   resize();
 }
 
@@ -417,6 +444,93 @@ function updateHud(dt: number): void {
   hudEls.fps.hidden = !settings.showFps;
 }
 
+// ---------- Free For All HUD ----------
+const f$ = {
+  hurt: $('f-hurt'), scope: $('f-scope'), cross: $('f-cross'), hit: $('f-hit'), mine: $('f-mine'), clock: $('f-clock'), lead: $('f-lead'),
+  sub: $('f-sub'), feed: $('f-feed'), callout: $('f-callout'), protect: $('f-protect'), hp: $('f-hp'), hpbar: $('f-hpbar'),
+  speed: $('f-speed'), slidebar: $('f-slidebar'), walljumps: $('f-walljumps'), slots: $('f-slots'), weapon: $('f-weapon'),
+  ammo: $('f-ammo'), mag: $('f-mag'), reloadWrap: $('f-reloadwrap'), reload: $('f-reload'), dead: $('f-dead'),
+  deadTitle: $('f-dead-title'), deadBy: $('f-dead-by'), deadTimer: $('f-dead-timer'), board: $('f-board'), boardRows: $('f-board-rows'),
+};
+let feedKey = '';
+
+function esc(t: string): string {
+  return t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+function standingsRows(rows: ReturnType<FfaGame['hud']>['standings']): string {
+  return rows.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(r.name)}</td><td>${r.kills}</td><td>${r.deaths}</td></tr>`).join('');
+}
+
+function updateFfaHud(dt: number): void {
+  if (!ffa) return;
+  const h = ffa.hud();
+  f$.hurt.style.opacity = String(Math.min(0.9, h.hurt + (h.hp < 35 && h.alive ? 0.25 : 0)));
+  f$.scope.hidden = !h.scoped;
+  f$.cross.style.opacity = String(h.scoped ? 0 : 1 - h.ads * 0.7);
+  f$.hit.style.opacity = String(h.hitmarker);
+  f$.hit.classList.toggle('head', h.hitHead);
+  const m = Math.floor(h.timeLeft / 60);
+  f$.clock.textContent = `${m}:${String(Math.floor(h.timeLeft % 60)).padStart(2, '0')}`;
+  f$.mine.textContent = String(h.myKills);
+  const leadOther = h.standings.find((r) => !r.me);
+  f$.lead.textContent = String(leadOther?.kills ?? 0);
+  f$.sub.textContent = `You ${h.myKills} · best bot ${leadOther?.kills ?? 0} · first to ${h.scoreLimit}`;
+
+  const key = h.feed.map((f) => f.killer + f.victim + f.age.toFixed(0)).join('|');
+  if (key !== feedKey) {
+    feedKey = key;
+    f$.feed.innerHTML = h.feed.map((f) =>
+      `<div class="${f.mine ? `mine-${f.mine}` : ''}">${esc(f.killer)} <span class="w">[${esc(f.weapon)}]</span>${f.head ? ' <span class="hs">HEADSHOT</span>' : ''} ${esc(f.victim)}</div>`).join('');
+  }
+  f$.callout.hidden = !h.callout;
+  if (h.callout) f$.callout.textContent = h.callout;
+  f$.protect.hidden = !(h.alive && h.protect > 0);
+
+  f$.hp.textContent = String(Math.ceil(h.hp));
+  f$.hpbar.style.width = `${h.hp}%`;
+  f$.hpbar.classList.toggle('low', h.hp < 35);
+  f$.speed.textContent = h.speed.toFixed(1);
+  f$.slidebar.style.width = `${Math.round(h.slideReady * 100)}%`;
+  f$.slidebar.classList.toggle('ready', h.slideReady >= 1);
+  f$.walljumps.hidden = !h.weapon.wallJump;
+  f$.walljumps.querySelectorAll('b').forEach((b, i) => b.classList.toggle('used', i >= h.wallJumpsLeft));
+  f$.slots.querySelectorAll<HTMLElement>('span').forEach((s) => s.classList.toggle('on', s.dataset['slot'] === h.slot));
+  f$.weapon.textContent = h.weapon.name;
+  f$.weapon.style.color = RARITY_BY_ID[h.rarity].color;
+  const melee = h.weapon.slot === 'melee';
+  f$.ammo.textContent = melee ? '∞' : String(h.ammo);
+  f$.mag.textContent = melee ? '' : `/ ${h.weapon.mag}`;
+  f$.reloadWrap.hidden = h.reload < 0;
+  f$.reload.style.width = `${Math.max(0, h.reload) * 100}%`;
+
+  f$.dead.hidden = h.alive;
+  if (!h.alive) {
+    f$.deadBy.textContent = h.killedBy ? `${h.killedBy} got you with the ${h.killedWith ?? 'weapon'}` : 'You fell';
+    f$.deadTimer.textContent = `Respawning in ${Math.max(1, Math.ceil(h.respawnIn))}`;
+  }
+  const showBoard = input.held('scoreboard');
+  f$.board.hidden = !showBoard;
+  if (showBoard) f$.boardRows.innerHTML = standingsRows(h.standings);
+
+  fpsFrames++;
+  fpsTime += dt;
+  if (fpsTime >= 0.5) { hudEls.fps.textContent = `${Math.round(fpsFrames / fpsTime)} fps`; fpsFrames = 0; fpsTime = 0; }
+}
+
+function endMatch(): void {
+  if (!ffa || mode === 'ended') return;
+  mode = 'ended';
+  input.setEnabled(false);
+  input.unlock();
+  const h = ffa.hud();
+  const meFirst = h.standings[0]?.me;
+  $('end-title').textContent = meFirst ? 'You win!' : `${h.winner ?? 'A bot'} wins`;
+  $('end-rows').innerHTML = standingsRows(h.standings);
+  show('ffa-hud', false);
+  show('match-end', true);
+}
+
 // ---------- Resize + loop ----------
 function resize(): void {
   const w = window.innerWidth;
@@ -429,6 +543,7 @@ function resize(): void {
   menuCam.updateProjectionMatrix();
   armory.resize(w, h);
   game?.resize(w, h);
+  ffa?.resize(w, h);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -439,11 +554,19 @@ let menuT = 0;
 function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.25);
   last = now;
-  if (mode === 'playing' && game) {
+  if (mode === 'playing' && kind === 'parkour' && game) {
     game.update(dt);
     input.endFrame();
     gfx.render(game.world.scene, game.camera, 0.5);
     updateHud(dt);
+  } else if (mode === 'playing' && kind === 'ffa' && ffa) {
+    ffa.update(dt);
+    input.endFrame();
+    gfx.render(ffa.world.scene, ffa.camera, 0.7);
+    updateFfaHud(dt);
+    if (ffa.over) endMatch();
+  } else if ((mode === 'paused' || mode === 'ended') && kind === 'ffa' && ffa) {
+    gfx.render(ffa.world.scene, ffa.camera, 0.7);
   } else if (mode === 'paused' && game) {
     gfx.render(game.world.scene, game.camera, 0.5);
   } else if (mode === 'armory') {
@@ -466,7 +589,7 @@ requestAnimationFrame(frame);
 
 // Handy for automated checks and debugging in the console.
 (window as unknown as { blockfire: unknown }).blockfire = {
-  get mode() { return mode; }, get game() { return game; }, armory, openArmory, selectArmoryWeapon,
+  get mode() { return mode; }, get game() { return game; }, get ffa() { return ffa; }, armory, openArmory, selectArmoryWeapon,
   setRarity: (r: RarityId) => { armRarity = r; armory.show(armWeapon.id, r); renderArmoryPanel(); },
   pick: (id: string, r?: RarityId) => {
     const w = WEAPON_BY_ID[id]!;

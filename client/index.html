@@ -18,14 +18,22 @@
     <section id="menu" class="screen">
       <div class="menu-panel">
         <h1 class="logo"><span>BLOCK</span><span class="fire">FIRE</span></h1>
-        <p class="tag">Movement sandbox · early build</p>
-        <button id="play" class="btn btn-primary">Play</button>
+        <p class="tag">Early build · Free For All vs bots</p>
+        <button id="play-ffa" class="btn btn-primary">Play · Free For All</button>
+        <div class="levels" role="radiogroup" aria-label="Bot difficulty">
+          <span>Bots</span>
+          <button class="lvl" data-level="easy" role="radio">Easy</button>
+          <button class="lvl" data-level="normal" role="radio">Normal</button>
+          <button class="lvl" data-level="hard" role="radio">Hard</button>
+          <button class="lvl" data-level="insane" role="radio">Insane</button>
+        </div>
+        <button id="play" class="btn">Parkour · Training Grounds</button>
         <button id="open-armory" class="btn">Armory</button>
         <button id="open-settings" class="btn">Settings</button>
         <button id="open-controls" class="btn">Controls</button>
         <p class="best" id="menu-best"></p>
       </div>
-      <p class="credit">Training Grounds · slide, strafe and wall-jump your way through the parkour pit</p>
+      <p class="credit">Neon Yard · first to 30 kills or the most kills in 6 minutes wins</p>
     </section>
 
     <!-- In-game HUD -->
@@ -81,6 +89,58 @@
       <p class="arm-hint">Drag to spin · everything is unlocked in this test build</p>
     </section>
 
+
+    <!-- Free For All HUD -->
+    <section id="ffa-hud" hidden>
+      <div class="hurt" id="f-hurt"></div>
+      <div class="scope" id="f-scope" hidden></div>
+      <div class="crosshair" id="f-cross"></div>
+      <div class="hitmark" id="f-hit"></div>
+      <div class="f-top">
+        <div class="f-score"><span class="you" id="f-mine">0</span><span class="clock" id="f-clock">6:00</span><span class="lead" id="f-lead">0</span></div>
+        <div class="f-sub" id="f-sub">First to 30</div>
+      </div>
+      <div class="feed" id="f-feed"></div>
+      <div class="callout" id="f-callout" hidden></div>
+      <div class="protect" id="f-protect" hidden>Spawn protection</div>
+      <div class="f-bl">
+        <div class="hp"><b id="f-hp">100</b><div class="hpbar"><i id="f-hpbar"></i></div></div>
+        <div class="f-speed"><span id="f-speed">0.0</span> m/s</div>
+      </div>
+      <div class="hud-bc">
+        <div class="slide"><span>Slide</span><div class="bar"><i id="f-slidebar"></i></div></div>
+        <div id="f-walljumps" class="pips" hidden><span>Wall-jumps</span><b></b><b></b><b></b></div>
+      </div>
+      <div class="f-br">
+        <div class="slots" id="f-slots"><span data-slot="primary">1</span><span data-slot="secondary">2</span><span data-slot="melee">3</span></div>
+        <div class="weapon" id="f-weapon">Assault Rifle</div>
+        <div class="ammo"><b id="f-ammo">30</b><span id="f-mag">/ 30</span></div>
+        <div class="reloadbar" id="f-reloadwrap" hidden><i id="f-reload"></i></div>
+      </div>
+      <div class="dead" id="f-dead" hidden>
+        <p class="dead-title" id="f-dead-title">Eliminated</p>
+        <p id="f-dead-by"></p>
+        <p class="dead-timer" id="f-dead-timer">Respawning in 3</p>
+      </div>
+      <div class="board" id="f-board" hidden>
+        <h3>Free For All · Neon Yard</h3>
+        <table class="stack"><thead><tr><th>#</th><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="f-board-rows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- Match end -->
+    <section id="match-end" class="screen dim" hidden>
+      <div class="sheet end">
+        <p class="end-kicker">Match over</p>
+        <h2 id="end-title">You win!</h2>
+        <table class="stack"><thead><tr><th>#</th><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="end-rows"></tbody></table>
+        <div class="sheet-actions">
+          <button id="end-menu" class="btn">Main menu</button>
+          <button id="end-again" class="btn btn-primary">Play again</button>
+        </div>
+      </div>
+    </section>
+
     <!-- Pause -->
     <section id="pause" class="screen dim" hidden>
       <div class="menu-panel center">
@@ -125,6 +185,8 @@
           <li><b>Ledge climb</b>: hold Space + W against a ledge up to 1.8 m high to pull yourself up.</li>
           <li><b>Switch weapons</b> with 1 (primary), 2 (secondary) and 3 (melee). Each weapon sets your speed: Super Pistols 125%, Dual Heavy MGs 65%.</li>
           <li><b>Wall-jump</b>: hold a Snake weapon (key 2 with the default loadout), then jump into a wall in the air, up to 3 times before landing.</li>
+          <li><b>Shoot</b> with left click, <b>aim down sights</b> with right click, <b>reload</b> with R. Hold Tab for the scoreboard.</li>
+          <li><b>Rocket-jump</b>: with the Bomber or Rocketeer Pistols, shoot the floor under you as you jump.</li>
           <li><b>Armory</b>: pick your loadout and skin rarity, and see every weapon as a hologram.</li>
         </ul>
         <div class="sheet-actions"><button id="c-close" class="btn btn-primary">Got it</button></div>

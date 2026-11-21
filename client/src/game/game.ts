@@ -7,7 +7,7 @@ import { buildWorld, type BuiltWorld } from './world.js';
 import type { Input } from './input.js';
 import type { Sfx } from './audio.js';
 import type { Graphics } from './graphics.js';
-import { buildWeaponModel, type WeaponModel } from './weapon-models.js';
+import { Viewmodel } from './viewmodel.js';
 import { rarityOf, type Loadout } from './loadout.js';
 import { loadBest, saveBest, type Settings } from './settings.js';
 
@@ -42,14 +42,7 @@ export class Game {
   private dip = 0;
   private dipVel = 0;
   private stepClock = 0;
-  private hand = new THREE.Group();
-  private model: WeaponModel | null = null;
-  private modelKey = '';
-  private swap = 0;
-  private swayX = 0;
-  private swayY = 0;
-  private lastYaw = 0;
-  private lastPitch = 0;
+  private viewmodel: Viewmodel;
 
   private run: RunPhase = 'idle';
   private runTime = 0;
@@ -68,11 +61,7 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420);
     this.camera.rotation.order = 'YXZ';
     this.world.scene.add(this.camera);
-    this.camera.add(this.hand);
-    // A small light attached to the camera so the held weapon always shows its finish.
-    const fill = new THREE.PointLight(0xffffff, 0.12, 1.2);
-    fill.position.set(0.1, 0.1, 0);
-    this.camera.add(fill);
+    this.viewmodel = new Viewmodel(this.camera);
 
     const [x, y, z] = map.spawn.pos;
     this.respawnPoint = { pos: { x, y, z }, yaw: map.spawn.yaw };
@@ -91,26 +80,7 @@ export class Game {
   /** Rebuild the held weapon model if the loadout or its skin changed. */
   refreshWeapon(): void {
     const w = this.weapon;
-    const rarity = rarityOf(this.loadout(), w.id);
-    const key = `${w.id}|${rarity}`;
-    if (key === this.modelKey) return;
-    this.modelKey = key;
-    if (this.model) this.hand.remove(this.model.group);
-    const model = buildWeaponModel(w.id, rarity);
-    const len = Math.max(model.size.z, model.size.x * 0.6);
-    const s = THREE.MathUtils.clamp(42 / len, 0.45, 0.8) * 0.01 * (w.slot === 'melee' ? 0.7 : 1);
-    model.group.scale.setScalar(s);
-    model.group.traverse((o) => { o.castShadow = false; });
-    const dual = w.id === 'super_pistols' || w.id === 'dual_heavy_mgs';
-    if (w.slot === 'melee') {
-      model.group.rotation.set(0.75, 0.35, 0.35);
-      model.group.position.set(0.2, -0.2, -0.28);
-    } else {
-      model.group.rotation.set(0, -0.04, 0);
-      model.group.position.set(dual ? 0 : 0.16, -0.15, -0.26 - (model.center.z * s));
-    }
-    this.hand.add(model.group);
-    this.model = model;
+    this.viewmodel.set(w, rarityOf(this.loadout(), w.id));
   }
 
   update(frameDt: number): void {
@@ -127,7 +97,6 @@ export class Game {
   private setSlot(slot: Slot): void {
     if (slot === this.slot) return;
     this.slot = slot;
-    this.swap = 1;
     this.sfx.click();
     this.refreshWeapon();
   }
@@ -174,7 +143,7 @@ export class Game {
   private onEvent(e: MoveEvent): void {
     switch (e) {
       case 'jump': this.sfx.jump(); break;
-      case 'land': this.sfx.land(); this.dipVel -= 1.6; break;
+      case 'land': this.sfx.land(); this.dipVel -= 1.6; this.viewmodel.land(); break;
       case 'slide': this.sfx.slide(); break;
       case 'wallJump': this.sfx.wallJump(); break;
       case 'climb': this.sfx.climb(); break;
@@ -271,24 +240,8 @@ export class Game {
       this.camera.updateProjectionMatrix();
     }
 
-    // Weapon sway (lags behind mouse movement), bob, slide tilt and the swap animation.
-    const dYaw = this.input.yaw - this.lastYaw;
-    const dPitch = this.input.pitch - this.lastPitch;
-    this.lastYaw = this.input.yaw;
-    this.lastPitch = this.input.pitch;
-    this.swayX += (THREE.MathUtils.clamp(dYaw * 2.5, -0.06, 0.06) - this.swayX) * Math.min(1, dt * 10);
-    this.swayY += (THREE.MathUtils.clamp(-dPitch * 2.5, -0.06, 0.06) - this.swayY) * Math.min(1, dt * 10);
-    this.swap = Math.max(0, this.swap - dt * 4);
-    const bob = p.onGround && !p.sliding ? Math.min(speed / 6, 1.4) : 0;
     const t = this.time;
-    this.hand.position.set(
-      this.swayX + Math.sin(t * 9) * 0.008 * bob,
-      this.swayY + Math.abs(Math.cos(t * 9)) * 0.008 * bob - (p.sliding ? 0.03 : 0) + this.dip * 0.025 - this.swap * 0.25,
-      0,
-    );
-    this.hand.rotation.z += ((p.sliding ? 0.22 : 0) - this.hand.rotation.z) * Math.min(1, dt * 12);
-    this.hand.rotation.x = -this.swap * 0.6;
-    this.model?.finish.update(t);
+    this.viewmodel.update(dt, this.input.yaw, this.input.pitch, { speed, onGround: p.onGround, sliding: p.sliding, reload: -1, ads: 0 });
 
     this.world.update(t);
   }
