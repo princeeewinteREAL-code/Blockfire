@@ -5,7 +5,7 @@
  * Flow:
  *   browser → server  join  (name, loadout, which room)
  *   server → browser  welcome (your id, room code, map)
- *   browser → server  in    (one input per 1/60 s tick, numbered)
+ *   browser → server  ib    (inputs for 1/60 s ticks, numbered, sent 2 at a time = 30 messages a second)
  *   server → browser  roster (who's in the room) whenever it changes
  *   server → browser  snap  (everyone's state + what happened) 20 times a second
  */
@@ -16,7 +16,9 @@ import type { RarityId, Slot } from './weapons.js';
 export const TICK_RATE = 60;
 export const SNAPSHOT_EVERY = 3; // ticks → 20 snapshots per second
 export const ROOM_SIZE = 8;
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
+/** Ticks of input packed into one message (fewer messages keeps the free Cloudflare plan going longer). */
+export const INPUTS_PER_MSG = 2;
 
 export type JoinMode = 'quick' | 'create' | 'join';
 
@@ -33,6 +35,8 @@ export interface JoinMsg {
 
 /** One tick of input. f = [forward, strafe, flags, yaw, pitch, slot?] */
 export interface InputMsg { t: 'in'; s: number; f: [number, number, number, number, number, number] }
+/** Several ticks of input in one message, oldest first. */
+export interface InputBatchMsg { t: 'ib'; i: InputMsg[] }
 
 export interface RosterEntry { id: number; name: string; bot: boolean; loadout: Loadout3; rarity: Record<string, RarityId> }
 
@@ -77,7 +81,7 @@ export interface SnapMsg {
 }
 
 export type ServerMsg = WelcomeMsg | RosterMsg | SnapMsg | ErrorMsg;
-export type ClientMsg = JoinMsg | InputMsg;
+export type ClientMsg = JoinMsg | InputMsg | InputBatchMsg;
 
 export const SLOTS: Slot[] = ['primary', 'secondary', 'melee'];
 

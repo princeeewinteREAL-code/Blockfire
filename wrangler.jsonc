@@ -1,11 +1,28 @@
-// Cloudflare deploy settings. `npx wrangler deploy` uploads the built game (client/dist)
-// as static files. Build first with `npm run build`.
+// Cloudflare deploy settings: the game page AND the online server, in one free Worker.
+//   Build command:  npm run build
+//   Deploy command: npx wrangler deploy
+// Run it all on your computer with:  npm run build && npx wrangler dev   (then open http://localhost:8787)
 // If your Worker in the Cloudflare dashboard has a different name, change "name" to match it.
 {
   "name": "blockfire",
+  "main": "server/worker/index.ts",
   "compatibility_date": "2026-11-21",
   "assets": {
     "directory": "./client/dist",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // These paths go to the game server code instead of the static files.
+    "run_worker_first": ["/ws", "/health"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "GameRoom" },
+      { "name": "LOBBY", "class_name": "Lobby" }
+    ]
+  },
+  // Free-plan Durable Objects must use the SQLite storage backend.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["GameRoom", "Lobby"] }
+  ],
+  "observability": { "enabled": true }
 }

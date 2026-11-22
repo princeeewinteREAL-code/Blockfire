@@ -18,10 +18,10 @@ Then open the address it prints (usually http://localhost:5173) and click **Play
 For online play on your own computer, also run the game server in a second terminal:
 
 ```bash
-npm run server   # builds and starts it on ws://localhost:8787
+npm run server   # starts it on ws://localhost:8787
 ```
 
-On `localhost` the game connects to it automatically.
+On `localhost` the game connects to it automatically. Or run everything exactly like the real site with `npm run cf:dev` and open http://localhost:8787.
 
 ## Controls
 
@@ -54,7 +54,9 @@ shared/   Code used by both the game and the server: movement physics, combat ru
           simulation, bots, weapons + rarities, map format, maps
 client/   The game you play in the browser (Three.js + Vite)
 server/   The online game server: rooms, bots, 60 Hz authoritative matches (Phase 3)
-deploy/   Docker Compose + Caddy files for hosting the server
+          src/     room + session logic, plus a Node.js server
+          worker/  the same rooms on Cloudflare Durable Objects (what the real site uses)
+deploy/   Docker Compose + Caddy, if you ever host the Node server on a VPS
 ```
 
 The movement physics live in `shared/src/movement.ts`, and every tuning number is in `shared/src/movement-config.ts`. The server runs the exact same code to check every move, which is the main protection against cheating.
@@ -73,12 +75,9 @@ The tests check combat (sniper one-shots, kill times, spawn protection, reloads,
 
 Every sound is an MP3 in `client/public/sounds/`, made by `python3 tools/make_sounds.py` (layered crack, body, thump, mechanics and echo). To use a real recording instead, replace the file with one of the same name, for example from the CC0 Free Firearm Sound Library on OpenGameArt.
 
-## Deploying (free)
+## Deploying (free, no card)
 
-- **Game page → Cloudflare.** `wrangler.jsonc` points `npx wrangler deploy` at `client/dist`, so the Cloudflare build command is `npm run build` and the deploy command is `npx wrangler deploy`.
-- **Game server → Oracle Cloud Always Free** with Docker and Caddy (automatic HTTPS). Then set `VITE_SERVER_URL` in Cloudflare so the page knows where the server is.
-
-Step-by-step: [DEPLOY.md](DEPLOY.md).
+One Cloudflare Worker serves the game page **and** runs the online server (each room is a Durable Object). The Cloudflare build command is `npm run build` and the deploy command is `npx wrangler deploy`; nothing else needs setting up. Details and free-plan limits: [DEPLOY.md](DEPLOY.md).
 
 ## Design documents
 

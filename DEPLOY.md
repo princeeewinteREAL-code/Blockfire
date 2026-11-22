@@ -1,86 +1,44 @@
-# Deploying Blockfire (free)
+# Deploying Blockfire (free, no card)
 
-Blockfire has two parts:
+The whole game runs in **one free Cloudflare Worker**:
 
-| Part | What it is | Where it runs (free) |
-|---|---|---|
-| **Client** | The game page you open in a browser (`client/dist`) | Cloudflare Workers static assets (already set up via `wrangler.jsonc`) |
-| **Server** | The online-multiplayer server (`server/`, WebSocket on port 8787) | Oracle Cloud *Always Free* Arm VM, behind Caddy for HTTPS |
-
-Offline modes (Free For All vs bots, Parkour) only need the client. **Play Online** also needs the server.
-
----
-
-## 1. Game server on Oracle Cloud Always Free
-
-### 1a. Create the VM (one time, about 15 minutes)
-1. Sign up at <https://www.oracle.com/cloud/free/>. Pick **Singapore** (`ap-singapore-1`) as the home region. It's closest to Malaysia, so ping is lowest. Oracle asks for a card to verify you; Always Free resources are never charged.
-2. **Compute → Instances → Create instance**
-   - Image: **Canonical Ubuntu 24.04**
-   - Shape: **Ampere → VM.Standard.A1.Flex**, 1 OCPU, 6 GB RAM. That's plenty, and well inside the free 4 OCPU / 24 GB.
-   - Networking: keep "Assign a public IPv4 address" on.
-   - SSH keys: download the private key Oracle generates, or paste your own public key.
-3. Note the instance's **public IP**.
-4. Open ports 80 and 443. Go to **Networking → Virtual cloud networks → (your VCN) → Security Lists → Default** and **Add Ingress Rules**:
-   - Source `0.0.0.0/0`, TCP, destination port `80`
-   - Source `0.0.0.0/0`, TCP, destination port `443`
-
-> If creation says *"Out of capacity for shape VM.Standard.A1.Flex"*, retry later or pick a different Availability Domain. This is common and goes away.
-
-### 1b. Free domain name (DuckDNS)
-1. Go to <https://www.duckdns.org>, sign in, and create a subdomain, e.g. `blockfire-parth`.
-2. Set its IP to the VM's public IP and click **update ip**.
-   You now have `blockfire-parth.duckdns.org`.
-
-### 1c. Install and start the server
-SSH in (`ssh -i your-key ubuntu@<public-ip>`), then:
-
-```bash
-# Ubuntu images on Oracle block web ports in iptables too — open them:
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-sudo apt-get update && sudo apt-get install -y iptables-persistent git
-sudo netfilter-persistent save
-
-# Docker
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker ubuntu && newgrp docker
-
-# Blockfire
-git clone https://github.com/princeeewinteREAL-code/Blockfire.git
-cd Blockfire/deploy
-DOMAIN=blockfire-parth.duckdns.org docker compose up -d --build
-```
-
-Check it: open `https://blockfire-parth.duckdns.org/health` in a browser. You should see
-`{"ok":true,"rooms":0,"players":0,"protocol":1}`. Caddy gets the HTTPS certificate on its own, which takes about 30 seconds the first time.
-
-To update the server after new code is merged:
-```bash
-cd ~/Blockfire && git pull && cd deploy && DOMAIN=blockfire-parth.duckdns.org docker compose up -d --build
-```
-Logs: `docker compose logs -f game`
-
----
-
-## 2. Point the client at the server (Cloudflare)
-
-In the Cloudflare dashboard → **Workers & Pages → blockfire → Settings → Build → Variables and secrets** (build variables), add:
-
-| Name | Value |
+| Address | What it is |
 |---|---|
-| `VITE_SERVER_URL` | `wss://blockfire-parth.duckdns.org` |
+| `/` | The game page (static files from `client/dist`) |
+| `/ws` | The online game server: every room is a Cloudflare **Durable Object** running matches at 60 ticks a second |
+| `/health` | `{"ok":true,"rooms":…,"players":…,"protocol":…}` |
 
-Then **Deployments → Retry/redeploy** so the page is rebuilt with that address baked in.
+Durable Objects are on Cloudflare's free Workers plan, with no card needed. Rooms start in milliseconds (no "waking up" wait) and run on Cloudflare's servers close to the players.
 
-Build settings stay as they are: build command `npm run build`, deploy command `npx wrangler deploy`.
+## Set up (one time)
 
----
+You already connected the GitHub repo to Cloudflare. That's all the setup needed.
 
-## Testing without deploying
+1. Merge the pull request. Cloudflare rebuilds automatically, using the same settings as before:
+   - Build command: `npm run build`
+   - Deploy command: `npx wrangler deploy`
+2. The first deploy creates the Durable Objects by itself (that's what `migrations` in `wrangler.jsonc` is for).
+3. Open `https://<your-worker>.workers.dev/health`. You should see `{"ok":true,...}`.
+4. Open the game, click **Play Online** → **Quick Play**.
 
-- Run everything locally: `npm run server` in one terminal, `npm run dev` in another, and open the page on `localhost`. It connects to `ws://localhost:8787` automatically.
-- Point any copy of the page at a server with a query string: `...?server=wss://blockfire-parth.duckdns.org`.
+If the deploy log complains about the Worker name, change `"name"` in `wrangler.jsonc` to the name shown in the Cloudflare dashboard.
 
-## Free fallback with no card: host from your own PC
-If you can't use Oracle, run `npm run server` on a PC, then `cloudflared tunnel --url http://localhost:8787` ([cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)). It prints an `https://…trycloudflare.com` address. Open the game with `?server=wss://<that-address>`. The address changes every time, and the server is only up while the PC is on, so this is for playing with friends, not for a permanent server.
+Do **not** set `VITE_SERVER_URL`. The page finds the server on its own address automatically. If you added it earlier, delete it.
+
+## Free-plan limits
+
+- **Requests: 100,000 a day.** Incoming WebSocket messages count 20 to 1. The game sends inputs 30 times a second per player, so this is about **18 player-hours of play per day**, for example 4 friends playing for 4½ hours.
+- **Compute: 13,000 GB-s a day.** That's about 29 hours of one room running, which is more than the request limit allows anyway.
+- If a limit is used up, joining fails with an error until it resets at 00:00 UTC (08:00 Malaysia time). The free plan never sends a bill.
+- Watch usage in the dashboard: Workers & Pages → blockfire → Metrics.
+
+## Run it on your computer
+
+```bash
+npm run cf:dev        # builds the game, then runs page + server like Cloudflare does
+```
+Open http://localhost:8787. For quick work on the page, use `npm run dev` (http://localhost:5173) with `npm run server` in a second terminal.
+
+## Other ways to host the server (optional)
+
+The repo still has a plain Node.js server (`npm run server`), plus a `Dockerfile` and `deploy/` (Docker Compose + Caddy for HTTPS). Use these if the game ever outgrows the free Cloudflare limits and you get a VPS. Point the page at it by setting the Cloudflare build variable `VITE_SERVER_URL=wss://your-server-address`, or open the game with `?server=wss://your-server-address`.
