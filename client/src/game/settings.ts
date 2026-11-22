@@ -1,6 +1,7 @@
 export type Action =
   | 'forward' | 'back' | 'left' | 'right'
   | 'jump' | 'crouch' | 'walk'
+  | 'fire' | 'aim' | 'reload' | 'scoreboard'
   | 'respawn' | 'slot1' | 'slot2' | 'slot3';
 
 export const ACTION_LABELS: Record<Action, string> = {
@@ -11,13 +12,20 @@ export const ACTION_LABELS: Record<Action, string> = {
   jump: 'Jump (hold to bunny-hop)',
   crouch: 'Crouch / slide',
   walk: 'Walk (silent)',
-  respawn: 'Back to checkpoint',
+  fire: 'Shoot / swing',
+  aim: 'Aim down sights',
+  reload: 'Reload',
+  scoreboard: 'Scoreboard (hold)',
+  respawn: 'Back to checkpoint (parkour)',
   slot1: 'Primary weapon',
   slot2: 'Secondary weapon',
   slot3: 'Melee weapon',
 };
 
+export type BotLevel = 'easy' | 'normal' | 'hard' | 'insane';
+
 export interface Settings {
+  botLevel: BotLevel;
   quality: import('./graphics.js').Quality;
   sensitivity: number;
   fov: number;
@@ -28,6 +36,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  botLevel: 'normal',
   quality: 'high',
   sensitivity: 1,
   fov: 100,
@@ -42,6 +51,10 @@ export const DEFAULT_SETTINGS: Settings = {
     jump: 'Space',
     crouch: 'KeyC',
     walk: 'ShiftLeft',
+    fire: 'Mouse0',
+    aim: 'Mouse2',
+    reload: 'KeyR',
+    scoreboard: 'Tab',
     respawn: 'KeyR',
     slot1: 'Digit1',
     slot2: 'Digit2',

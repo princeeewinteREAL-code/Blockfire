@@ -2,7 +2,7 @@
 
 A fast, blocky shooter you play in your browser: slide, strafe, bunny-hop and wall-jump through short matches, earn coins, and collect rare weapon skins.
 
-**Status: early build.** You can run around the Training Grounds map, race the timed parkour course, and browse all 34 weapons in the holographic Armory (every rarity skin, hologram or real model). Shooting arrives in Phase 2, online multiplayer in Phase 3.
+**Status: Phase 2 — Free For All vs bots.** Play Free For All on Neon Yard against 7 bots (Easy, Normal, Hard or Insane), race the Training Grounds parkour course, and browse all 34 weapons in the holographic Armory. Online multiplayer arrives in Phase 3.
 
 ## Play it on your computer
 
@@ -23,6 +23,10 @@ Then open the address it prints (usually http://localhost:5173) and click **Play
 | Space | Jump. Hold it to bunny-hop |
 | C | Crouch. Press while running to slide |
 | Left Shift | Walk silently |
+| Left click | Shoot / swing |
+| Right click | Aim down sights (scope on snipers) |
+| R | Reload (in parkour: back to checkpoint) |
+| Tab | Scoreboard |
 | 1 / 2 / 3 | Primary / secondary / melee weapon (each sets your move speed) |
 | R | Back to the last checkpoint |
 | Esc | Pause |
@@ -38,7 +42,8 @@ Blocky shapes with realistic lighting: physically based materials (metal reflect
 ## Project layout
 
 ```
-shared/   Code used by both the game and the server: movement physics, weapons + rarities, map format, maps
+shared/   Code used by both the game and the server: movement physics, combat rules, the match
+          simulation, bots, weapons + rarities, map format, maps
 client/   The game you play in the browser (Three.js + Vite)
 server/   The online game server and API (Phase 3 and 4)
 ```
@@ -51,7 +56,9 @@ The movement physics live in `shared/src/movement.ts`, and every tuning number i
 npm run check   # typecheck + tests + production build
 ```
 
-The tests check the movement numbers from the design doc (6 m/s run, 1.2 m jump, 1.5x slide, 14 m/s cap, 3 wall-jumps…) and run a scripted player through the whole parkour course, so a map change can't make it impossible.
+The match simulation (`shared/src/match.ts`) has no graphics in it: the browser runs it today for you-vs-bots, and the Phase 3 server will run the same file for online matches.
+
+The tests check combat (sniper one-shots, kill times, spawn protection, reloads, rocket-jumps, knife backstabs), run whole bot-vs-bot matches, and check the movement numbers from the design doc (6 m/s run, 1.2 m jump, 1.5x slide, 14 m/s cap, 3 wall-jumps…) and run a scripted player through the whole parkour course, so a map change can't make it impossible.
 
 ## Free hosting (Cloudflare Pages)
 

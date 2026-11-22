@@ -254,9 +254,10 @@ export function buildWorld(map: MapDef, renderer: THREE.WebGLRenderer, shadowSiz
   // Background: a clean sky gradient plus a glowing sun disc (it blooms on Medium and up).
   scene.background = skyTexture(map.sky.top, map.sky.bottom);
   const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 32), THREE.MathUtils.degToRad(150));
+  const night = map.lighting === 'night';
   const sunDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(9, 32),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.95, 0.85).multiplyScalar(3), fog: false }),
+    new THREE.CircleGeometry(night ? 6 : 9, 32),
+    new THREE.MeshBasicMaterial({ color: (night ? new THREE.Color(0.85, 0.9, 1) : new THREE.Color(1, 0.95, 0.85)).multiplyScalar(night ? 1.6 : 3), fog: false }),
   );
   sunDisc.position.copy(sunDir).multiplyScalar(330);
   sunDisc.lookAt(0, 0, 0);
@@ -275,13 +276,13 @@ export function buildWorld(map: MapDef, renderer: THREE.WebGLRenderer, shadowSiz
   u['sunPosition']!.value.copy(sunDir);
   skyScene.add(sky);
   scene.environment = pmrem.fromScene(skyScene, 0.02).texture;
-  scene.environmentIntensity = 0.32;
+  scene.environmentIntensity = night ? 0.08 : 0.32;
   pmrem.dispose();
 
-  scene.fog = new THREE.Fog(map.sky.fog, 120, 340);
+  scene.fog = night ? new THREE.Fog(map.sky.fog, 40, 160) : new THREE.Fog(map.sky.fog, 120, 340);
 
-  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x4a5536, 0.7));
-  const sun = new THREE.DirectionalLight(0xfff0d8, 1.9);
+  scene.add(night ? new THREE.HemisphereLight(0x6a6aff, 0x1a1020, 0.55) : new THREE.HemisphereLight(0xcfe3ff, 0x4a5536, 0.7));
+  const sun = night ? new THREE.DirectionalLight(0x9db4ff, 0.75) : new THREE.DirectionalLight(0xfff0d8, 1.9);
   sun.position.copy(sunDir).multiplyScalar(90);
   sun.castShadow = true;
   sun.shadow.mapSize.set(shadowSize, shadowSize);
@@ -294,7 +295,27 @@ export function buildWorld(map: MapDef, renderer: THREE.WebGLRenderer, shadowSiz
   for (const b of map.boxes) scene.add(boxMesh(b));
   for (const r of map.ramps) scene.add(rampMesh(r));
   for (const z of map.zones) scene.add(zoneMesh(z));
-  scene.add(mountains());
+  if (!night) scene.add(mountains());
+  else {
+    // Neon glow: coloured lights near each glowing block so the neon actually lights the yard.
+    const glowSpots = map.boxes.filter((b) => b.material === 'neon' && (b.max[1] - b.min[1]) < 1 && (b.max[0] - b.min[0]) < 3);
+    for (const b of glowSpots.slice(0, 6)) {
+      const l = new THREE.PointLight(new THREE.Color(b.color), 40, 22, 1.8);
+      l.position.set((b.min[0] + b.max[0]) / 2, b.min[1] - 0.6, (b.min[2] + b.max[2]) / 2);
+      scene.add(l);
+    }
+    // Stars.
+    const starGeo = new THREE.BufferGeometry();
+    const pts: number[] = [];
+    let seed = 11;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 700; i++) {
+      const th = rnd() * Math.PI * 2, ph = rnd() * Math.PI * 0.45;
+      pts.push(Math.cos(th) * Math.sin(ph) * 300, Math.cos(ph) * 300, Math.sin(th) * Math.sin(ph) * 300);
+    }
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, sizeAttenuation: false, fog: false })));
+  }
 
   let lavaTex: THREE.CanvasTexture | null = null;
   if (map.lava) {
@@ -325,7 +346,7 @@ export function buildWorld(map: MapDef, renderer: THREE.WebGLRenderer, shadowSiz
   }
 
   const sky2 = clouds();
-  scene.add(sky2);
+  if (!night) scene.add(sky2);
 
   return {
     scene,

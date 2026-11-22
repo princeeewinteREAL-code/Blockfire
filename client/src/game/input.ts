@@ -10,8 +10,12 @@ export class Input {
   yaw = 0;
   pitch = 0;
   locked = false;
+  /** Multiplies mouse sensitivity (lower while zoomed in). */
+  sensMul = 1;
   private dragging = false;
   private enabled = false;
+  /** Once pointer lock has worked, never fall back to drag-to-look. */
+  private lockedOnce = false;
 
   constructor(private canvas: HTMLElement, private settings: () => Settings) {
     window.addEventListener('keydown', (e) => {
@@ -28,7 +32,7 @@ export class Input {
       const code = `Mouse${e.button}`;
       if (!this.down.has(code)) this.pressedOnce.add(code);
       this.down.add(code);
-      if (!this.locked) this.dragging = true;
+      if (!this.locked && e.button === 0 && !this.lockedOnce) this.dragging = true;
     });
     window.addEventListener('mouseup', (e) => {
       this.down.delete(`Mouse${e.button}`);
@@ -37,7 +41,7 @@ export class Input {
     window.addEventListener('mousemove', (e) => {
       if (!this.enabled || (!this.locked && !this.dragging)) return;
       const s = this.settings();
-      const k = 0.0022 * s.sensitivity;
+      const k = 0.0022 * s.sensitivity * this.sensMul;
       this.yaw -= e.movementX * k;
       this.pitch -= e.movementY * k * (s.invertY ? -1 : 1);
       const limit = Math.PI / 2 - 0.01;
@@ -47,6 +51,7 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
+      if (this.locked) this.lockedOnce = true;
     });
   }
 

@@ -52,6 +52,10 @@ export interface MapDef {
   zones: Zone[];
   /** Sky and fog colours. */
   sky: { top: string; bottom: string; fog: string };
+  /** Spawn points for combat modes (players spawn at the one farthest from enemies). */
+  spawns?: Array<{ pos: Vec3Tuple; yaw: number }>;
+  /** Lighting mood. */
+  lighting?: 'day' | 'night';
   /** A pool of lava: touching it sends you back to your checkpoint. */
   lava?: { y: number; x0: number; x1: number; z0: number; z1: number };
 }
