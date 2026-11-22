@@ -142,3 +142,52 @@ describe('bots', () => {
     expect(BOT_SKILL.insane.error).toBeLessThan(BOT_SKILL.easy.error);
   });
 });
+
+describe('Blocktown', () => {
+  it('is much bigger than Neon Yard (Burg-sized)', async () => {
+    const { BLOCKTOWN } = await import('../src/index.js');
+    const span = (m: typeof BLOCKTOWN) => {
+      const xs = m.spawns!.map((s) => s.pos[0]); const zs = m.spawns!.map((s) => s.pos[2]);
+      return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...zs) - Math.min(...zs));
+    };
+    expect(span(BLOCKTOWN)).toBeGreaterThan(span(NEON_YARD) * 2);
+  });
+
+  it('every spawn has room to stand and is inside the town walls', async () => {
+    const { BLOCKTOWN } = await import('../src/index.js');
+    for (const s of BLOCKTOWN.spawns!) {
+      expect(fits(BLOCKTOWN, s.pos[0], 0.01, s.pos[2], 1.8), `spawn ${s.pos}`).toBe(true);
+    }
+  });
+
+  it('you can walk in the front door of a house and up the stairs to the second floor', async () => {
+    const { BLOCKTOWN, createPlayer, stepPlayer, emptyInput } = await import('../src/index.js');
+    // North-west house: south door at x = -34, z = -28. Walk north through it.
+    const p = createPlayer({ x: -34, y: 0.1, z: -24 });
+    for (let i = 0; i < 90; i++) stepPlayer(p, { ...emptyInput(), forward: 1, yaw: 0 }, BLOCKTOWN, DT);
+    expect(p.pos.z).toBeLessThan(-30); // inside
+    // Stairs run along the west wall from the north end up to the south end.
+    const q = createPlayer({ x: -42.5, y: 0.1, z: -38 });
+    let peak = 0;
+    for (let i = 0; i < 240; i++) { stepPlayer(q, { ...emptyInput(), forward: 1, yaw: Math.PI }, BLOCKTOWN, DT); peak = Math.max(peak, q.pos.y); }
+    expect(peak).toBeGreaterThan(3);
+  });
+
+  it('bots play a full minute there and get kills', async () => {
+    const { BLOCKTOWN } = await import('../src/index.js');
+    const m = new Match(BLOCKTOWN, { scoreLimit: 999, timeLimit: 9999 }, 5);
+    const rand = makeRng(5);
+    const brains = new Map<number, ReturnType<typeof createBrain>>();
+    for (let i = 0; i < 8; i++) {
+      const f = m.addFighter(`b${i}`, botLoadout(rand), true);
+      brains.set(f.id, createBrain('hard', 70 + i));
+    }
+    for (let t = 0; t < 60 / DT; t++) {
+      const inputs = new Map<number, FighterInput>();
+      for (const f of m.fighters) inputs.set(f.id, botThink(m, f, brains.get(f.id)!, DT));
+      m.tick(DT, inputs);
+      m.events = [];
+    }
+    expect(m.fighters.reduce((s, f) => s + f.kills, 0)).toBeGreaterThan(2);
+  });
+});

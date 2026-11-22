@@ -84,8 +84,8 @@ export interface Finish {
   update(t: number): void;
 }
 
-export function makeFinish(rarity: RarityId): Finish {
-  const f = FINISHES[rarity];
+export function makeFinish(rarity: RarityId, glowScale = 1): Finish {
+  const f = { ...FINISHES[rarity], glow: FINISHES[rarity].glow * glowScale };
   const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
   const accentColor = new THREE.Color(f.accent);
   const mats: Record<MatKey, THREE.MeshStandardMaterial> = {
@@ -97,7 +97,7 @@ export function makeFinish(rarity: RarityId): Finish {
     accent: std({ color: accentColor, emissive: accentColor, emissiveIntensity: f.glow, metalness: 0.3, roughness: 0.3 }),
     metal: std({ color: rarity === 'lifelong' ? '#1c1c22' : '#2b3038', metalness: 0.85, roughness: 0.32 }),
     grip: std({ color: rarity === 'lifelong' ? '#111114' : '#22252b', metalness: 0.05, roughness: 0.85 }),
-    glass: std({ color: '#8fe3ff', emissive: rarity === 'basic' || rarity === 'common' ? '#1d5d7a' : accentColor, emissiveIntensity: 0.5, metalness: 0.1, roughness: 0.05 }),
+    glass: std({ color: '#8fe3ff', emissive: rarity === 'basic' || rarity === 'common' ? '#1d5d7a' : accentColor, emissiveIntensity: 0.5 * glowScale, metalness: 0.1, roughness: 0.05 }),
     blade: std({ color: rarity === 'legendary' ? '#f0d58a' : '#d7dce3', metalness: 1, roughness: 0.18 }),
     wood: std({ color: '#8a5a33', metalness: 0, roughness: 0.7 }),
     gold: std({ color: '#e2b33c', metalness: 1, roughness: 0.24 }),
@@ -441,8 +441,8 @@ export interface WeaponModel {
 }
 
 /** Build any weapon in any rarity. Returns a group in centimetres (scale by 0.01 for metres). */
-export function buildWeaponModel(id: string, rarity: RarityId): WeaponModel {
-  const finish = makeFinish(rarity);
+export function buildWeaponModel(id: string, rarity: RarityId, glowScale = 1): WeaponModel {
+  const finish = makeFinish(rarity, glowScale);
   const b = new Builder(finish.mats);
   const build = BUILDERS[id];
   if (!build) throw new Error(`No model for weapon "${id}"`);

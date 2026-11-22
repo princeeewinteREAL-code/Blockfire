@@ -13,13 +13,13 @@ export function tracerColor(r: RarityId): THREE.Color {
 }
 
 const PROJECTILE_LOOK: Record<string, { color: string; size: [number, number, number]; glow: number }> = {
-  bomber: { color: '#ffb347', size: [0.16, 0.16, 0.3], glow: 1.5 },
-  k2_bomber: { color: '#ff3b1f', size: [0.38, 0.38, 0.6], glow: 3 },
-  electronic_gun: { color: '#38e1ff', size: [0.08, 0.08, 0.9], glow: 5 },
-  firecrackers: { color: '#ff4fd8', size: [0.12, 0.12, 0.3], glow: 4 },
-  rocketeer: { color: '#ffd36a', size: [0.1, 0.1, 0.24], glow: 2 },
-  flare_pistol: { color: '#ff4b2b', size: [0.14, 0.14, 0.14], glow: 6 },
-  sticky_bomb: { color: '#7dff5a', size: [0.22, 0.22, 0.22], glow: 2.5 },
+  bomber: { color: '#ffb347', size: [0.16, 0.16, 0.3], glow: 1.1 },
+  k2_bomber: { color: '#ff3b1f', size: [0.38, 0.38, 0.6], glow: 1.6 },
+  electronic_gun: { color: '#38e1ff', size: [0.06, 0.06, 0.6], glow: 2 },
+  firecrackers: { color: '#ff4fd8', size: [0.1, 0.1, 0.22], glow: 1.8 },
+  rocketeer: { color: '#ffd36a', size: [0.1, 0.1, 0.24], glow: 1.2 },
+  flare_pistol: { color: '#ff4b2b', size: [0.12, 0.12, 0.12], glow: 2.5 },
+  sticky_bomb: { color: '#7dff5a', size: [0.2, 0.2, 0.2], glow: 1.4 },
 };
 
 /**
@@ -50,37 +50,37 @@ export class Effects {
     scene.add(this.flash);
   }
 
-  tracer(from: THREE.Vector3, to: THREE.Vector3, color: THREE.Color, thick = 0.025): void {
+  tracer(from: THREE.Vector3, to: THREE.Vector3, color: THREE.Color, thick = 0.012): void {
     const len = from.distanceTo(to);
     if (len < 0.3) return;
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(thick, thick, len),
-      new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(3), transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(1.4), transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false }),
     );
     mesh.position.copy(from).lerp(to, 0.5);
     mesh.lookAt(to);
     this.scene.add(mesh);
-    this.tracers.push({ mesh, life: 0.07, max: 0.07 });
+    this.tracers.push({ mesh, life: 0.045, max: 0.045 });
   }
 
-  muzzle(at: THREE.Vector3, color: THREE.Color): void {
+  /** A quick light flash at the gun (only for your own shots). */
+  muzzle(at: THREE.Vector3): void {
     this.flash.position.copy(at);
-    this.flash.color.copy(color).lerp(new THREE.Color(1, 0.85, 0.6), 0.5);
-    this.flash.intensity = 6;
-    this.flashLife = 0.05;
-    this.sparks(at, color, 4, 3, 0.03);
+    this.flash.color.set(1, 0.85, 0.6);
+    this.flash.intensity = 1.6;
+    this.flashLife = 0.035;
   }
 
   sparks(at: THREE.Vector3, color: THREE.Color, count: number, speed: number, size = 0.05): void {
     for (let i = 0; i < count; i++) {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize().multiplyScalar(speed * (0.4 + Math.random()));
-      this.bursts.push({ pos: at.clone(), vel: v, life: 0.35 + Math.random() * 0.3, max: 0.6, color: color.clone().multiplyScalar(2), size });
+      this.bursts.push({ pos: at.clone(), vel: v, life: 0.2 + Math.random() * 0.2, max: 0.4, color: color.clone().multiplyScalar(1.2), size });
     }
   }
 
   /** Blocks flying apart (deaths) — pass the character's colours. */
   shatter(at: THREE.Vector3, colors: THREE.Color[]): void {
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 14; i++) {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 1.2 + 0.3, Math.random() - 0.5).multiplyScalar(6);
       const p = at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.5, Math.random() * 1.6, (Math.random() - 0.5) * 0.5));
       this.bursts.push({ pos: p, vel: v, life: 0.9 + Math.random() * 0.5, max: 1.4, color: colors[i % colors.length]!.clone(), size: 0.12 });
@@ -92,15 +92,15 @@ export class Effects {
     const color = weapon === 'sticky_bomb' ? new THREE.Color('#9dff5a') : new THREE.Color('#ff8a2b');
     const mesh = new THREE.Mesh(
       new THREE.IcosahedronGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(4), transparent: true, opacity: 0.85, toneMapped: false, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(2), transparent: true, opacity: 0.7, toneMapped: false, depthWrite: false }),
     );
     mesh.position.copy(at);
-    const light = new THREE.PointLight(color, big ? 120 : 50, radius * 4, 2);
+    const light = new THREE.PointLight(color, big ? 60 : 25, radius * 3, 2);
     light.position.copy(at);
     this.scene.add(mesh, light);
     this.blasts.push({ mesh, light, life: big ? 0.6 : 0.4, max: big ? 0.6 : 0.4, radius });
-    this.sparks(at, new THREE.Color('#ffcf6a'), big ? 60 : 28, big ? 14 : 9, big ? 0.14 : 0.09);
-    this.sparks(at, new THREE.Color('#444444'), big ? 30 : 12, big ? 8 : 5, 0.18);
+    this.sparks(at, new THREE.Color('#ffcf6a'), big ? 26 : 12, big ? 12 : 8, big ? 0.12 : 0.08);
+    this.sparks(at, new THREE.Color('#444444'), big ? 12 : 6, big ? 7 : 5, 0.16);
   }
 
   /** Keep projectile meshes in sync with the match. */
@@ -123,7 +123,7 @@ export class Effects {
       if (!p.stuck) m.lookAt(p.pos.x + p.vel.x, p.pos.y + p.vel.y, p.pos.z + p.vel.z);
       else m.scale.setScalar(1 + 0.25 * Math.sin(t * 30));
       // Trails for slow explosive shells.
-      if (!p.stuck && WEAPON_BY_ID[p.weapon]?.splash && Math.random() < 0.6) {
+      if (!p.stuck && WEAPON_BY_ID[p.weapon]?.splash && Math.random() < 0.25) {
         this.bursts.push({ pos: m.position.clone(), vel: new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.5, (Math.random() - 0.5) * 0.4), life: 0.4, max: 0.4, color: new THREE.Color('#888888'), size: 0.1 });
       }
     }

@@ -2,7 +2,7 @@
 
 A fast, blocky shooter you play in your browser: slide, strafe, bunny-hop and wall-jump through short matches, earn coins, and collect rare weapon skins.
 
-**Status: Phase 2 — Free For All vs bots.** Play Free For All on Neon Yard against 7 bots (Easy, Normal, Hard or Insane), race the Training Grounds parkour course, and browse all 34 weapons in the holographic Armory. Online multiplayer arrives in Phase 3.
+**Status: Phase 2 — Free For All vs bots.** Play Free For All on Blocktown (big, Burg-sized) or Neon Yard (small) against bots (Easy, Normal, Hard or Insane), race the Training Grounds parkour course, and browse all 34 weapons in the holographic Armory. Online multiplayer arrives in Phase 3.
 
 ## Play it on your computer
 
@@ -20,9 +20,10 @@ Then open the address it prints (usually http://localhost:5173) and click **Play
 | Key | Action |
 | --- | --- |
 | W A S D | Move |
-| Space | Jump. Hold it to bunny-hop |
-| C | Crouch. Press while running to slide |
-| Left Shift | Walk silently |
+| Space | Jump. Hold it to bunny-hop (each hop builds a little speed) |
+| W + A / W + D | Strafe sprint (faster than W alone) |
+| Left Shift | Crouch / slide. Press it just before you land, then jump, to slide-hop (the fast way to move) |
+| X | Walk silently |
 | Left click | Shoot / swing |
 | Right click | Aim down sights (scope on snipers) |
 | R | Reload (in parkour: back to checkpoint) |
@@ -68,6 +69,14 @@ The tests check combat (sniper one-shots, kill times, spawn protection, reloads,
    - Build output directory: `client/dist`
    - Environment variable: `NODE_VERSION` = `22`
 3. Save. Every push to `main` now publishes the game at `https://<project-name>.pages.dev`, free.
+
+## Sounds
+
+Every sound is an MP3 in `client/public/sounds/`, made by `python3 tools/make_sounds.py` (layered crack, body, thump, mechanics and echo). To use a real recording instead, replace the file with one of the same name, for example from the CC0 Free Firearm Sound Library on OpenGameArt.
+
+## Deploying to Cloudflare
+
+`wrangler.jsonc` points `npx wrangler deploy` at `client/dist`, so the Cloudflare build command is `npm run build` and the deploy command is `npx wrangler deploy`.
 
 ## Design documents
 

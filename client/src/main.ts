@@ -1,7 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import {
-  NEON_YARD, RARITIES, RARITY_BY_ID, TEST_MAP, WEAPON_BY_ID, bodyTtk, weaponsInSlot, type RarityId, type Slot, type WeaponDef,
+  BLOCKTOWN, NEON_YARD, RARITIES, RARITY_BY_ID, TEST_MAP, WEAPON_BY_ID, bodyTtk, weaponsInSlot, type RarityId, type Slot, type WeaponDef,
 } from '@blockfire/shared';
 import { Game, formatTime } from './game/game.js';
 import { FfaGame } from './game/ffa.js';
@@ -14,7 +14,7 @@ import { ArmoryScene } from './game/armory.js';
 import { loadLoadout, rarityOf, saveLoadout, type Loadout } from './game/loadout.js';
 import {
   ACTION_LABELS, DEFAULT_SETTINGS, keyLabel, loadBest, loadSettings, saveSettings,
-  type Action, type BotLevel, type Settings,
+  type Action, type BotLevel, type FfaMap, type Settings,
 } from './game/settings.js';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -104,7 +104,9 @@ async function startPlaying(next?: 'parkour' | 'ffa', fresh = false): Promise<vo
     if (!game) game = new Game(TEST_MAP, input, sfx, getSettings, gfx, getLoadout);
     game.refreshWeapon();
   } else {
-    if (!ffa || fresh || ffa.over) ffa = new FfaGame(NEON_YARD, input, sfx, getSettings, gfx, getLoadout, settings.botLevel, 7);
+    const map = settings.map === 'neon-yard' ? NEON_YARD : BLOCKTOWN;
+    if (!ffa || fresh || ffa.over) ffa = new FfaGame(map, input, sfx, getSettings, gfx, getLoadout, settings.botLevel, map === BLOCKTOWN ? 9 : 7);
+    $('f-board-title').textContent = `Free For All · ${map.name}`;
     ffa.refreshWeapon();
   }
   resize();
@@ -148,13 +150,23 @@ $('end-again').addEventListener('click', () => void startPlaying('ffa', true));
 $('end-menu').addEventListener('click', () => { sfx.click(); toMenu(); });
 
 function renderLevels(): void {
-  document.querySelectorAll<HTMLButtonElement>('.lvl').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['level'] === settings.botLevel)));
+  document.querySelectorAll<HTMLButtonElement>('.lvlbtn').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['level'] === settings.botLevel)));
+  document.querySelectorAll<HTMLButtonElement>('.mapbtn').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['map'] === settings.map)));
 }
-document.querySelectorAll<HTMLButtonElement>('.lvl').forEach((b) => {
+document.querySelectorAll<HTMLButtonElement>('.lvlbtn').forEach((b) => {
   b.addEventListener('click', () => {
     sfx.unlock();
     sfx.click();
     settings = { ...settings, botLevel: b.dataset['level'] as BotLevel };
+    saveSettings(settings);
+    renderLevels();
+  });
+});
+document.querySelectorAll<HTMLButtonElement>('.mapbtn').forEach((b) => {
+  b.addEventListener('click', () => {
+    sfx.unlock();
+    sfx.click();
+    settings = { ...settings, map: b.dataset['map'] as FfaMap };
     saveSettings(settings);
     renderLevels();
   });
@@ -557,16 +569,16 @@ function frame(now: number): void {
   if (mode === 'playing' && kind === 'parkour' && game) {
     game.update(dt);
     input.endFrame();
-    gfx.render(game.world.scene, game.camera, 0.5);
+    gfx.render(game.world.scene, game.camera, 0.4);
     updateHud(dt);
   } else if (mode === 'playing' && kind === 'ffa' && ffa) {
     ffa.update(dt);
     input.endFrame();
-    gfx.render(ffa.world.scene, ffa.camera, 0.7);
+    gfx.render(ffa.world.scene, ffa.camera, 0.4);
     updateFfaHud(dt);
     if (ffa.over) endMatch();
   } else if ((mode === 'paused' || mode === 'ended') && kind === 'ffa' && ffa) {
-    gfx.render(ffa.world.scene, ffa.camera, 0.7);
+    gfx.render(ffa.world.scene, ffa.camera, 0.4);
   } else if (mode === 'paused' && game) {
     gfx.render(game.world.scene, game.camera, 0.5);
   } else if (mode === 'armory') {

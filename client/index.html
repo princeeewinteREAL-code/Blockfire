@@ -22,10 +22,15 @@
         <button id="play-ffa" class="btn btn-primary">Play · Free For All</button>
         <div class="levels" role="radiogroup" aria-label="Bot difficulty">
           <span>Bots</span>
-          <button class="lvl" data-level="easy" role="radio">Easy</button>
-          <button class="lvl" data-level="normal" role="radio">Normal</button>
-          <button class="lvl" data-level="hard" role="radio">Hard</button>
-          <button class="lvl" data-level="insane" role="radio">Insane</button>
+          <button class="lvl lvlbtn" data-level="easy" role="radio">Easy</button>
+          <button class="lvl lvlbtn" data-level="normal" role="radio">Normal</button>
+          <button class="lvl lvlbtn" data-level="hard" role="radio">Hard</button>
+          <button class="lvl lvlbtn" data-level="insane" role="radio">Insane</button>
+        </div>
+        <div class="levels" role="radiogroup" aria-label="Map">
+          <span>Map</span>
+          <button class="mapbtn lvl" data-map="blocktown" role="radio">Blocktown (big)</button>
+          <button class="mapbtn lvl" data-map="neon-yard" role="radio">Neon Yard (small)</button>
         </div>
         <button id="play" class="btn">Parkour · Training Grounds</button>
         <button id="open-armory" class="btn">Armory</button>
@@ -33,7 +38,7 @@
         <button id="open-controls" class="btn">Controls</button>
         <p class="best" id="menu-best"></p>
       </div>
-      <p class="credit">Neon Yard · first to 30 kills or the most kills in 6 minutes wins</p>
+      <p class="credit">Free For All · first to 30 kills or the most kills in 6 minutes wins</p>
     </section>
 
     <!-- In-game HUD -->
@@ -56,7 +61,7 @@
         <div class="weapon" id="weapon">Assault Rifle</div>
         <div class="weapon-sub" id="weapon-sub">95% speed</div>
       </div>
-      <div class="hud-tl" id="hint">Start the timer by running out of the green gate · R = back to checkpoint · Esc = pause</div>
+      <div class="hud-tl" id="hint">Run out of the green gate to start the timer · Shift slides · R = back to checkpoint · Esc = pause</div>
       <div class="hud-tr" id="fps" hidden></div>
     </section>
 
@@ -123,7 +128,7 @@
         <p class="dead-timer" id="f-dead-timer">Respawning in 3</p>
       </div>
       <div class="board" id="f-board" hidden>
-        <h3>Free For All · Neon Yard</h3>
+        <h3 id="f-board-title">Free For All</h3>
         <table class="stack"><thead><tr><th>#</th><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="f-board-rows"></tbody></table>
       </div>
     </section>
@@ -177,17 +182,15 @@
       <div class="sheet">
         <h2>How to move</h2>
         <ul class="howto">
-          <li><b>Run</b> with W A S D. <b>Walk</b> silently with Left Shift.</li>
-          <li><b>Jump</b> with Space. Hold it to bunny-hop: you jump again the instant you land and keep your speed.</li>
-          <li><b>Slide</b>: press C while running for a 1.5× speed burst. Slide down ramps to go even faster.</li>
-          <li><b>Slide-hop</b>: jump during a slide to carry the slide speed into the air.</li>
-          <li><b>Air strafe</b>: in the air, hold A or D and turn the mouse the same way to gain speed (up to 14 m/s).</li>
-          <li><b>Ledge climb</b>: hold Space + W against a ledge up to 1.8 m high to pull yourself up.</li>
-          <li><b>Switch weapons</b> with 1 (primary), 2 (secondary) and 3 (melee). Each weapon sets your speed: Super Pistols 125%, Dual Heavy MGs 65%.</li>
-          <li><b>Wall-jump</b>: hold a Snake weapon (key 2 with the default loadout), then jump into a wall in the air, up to 3 times before landing.</li>
-          <li><b>Shoot</b> with left click, <b>aim down sights</b> with right click, <b>reload</b> with R. Hold Tab for the scoreboard.</li>
+          <li><b>Run</b> with W A S D. Holding <b>W + A</b> or <b>W + D</b> is faster, like Krunker's strafe sprint.</li>
+          <li><b>Jump</b> with Space. Hold it to bunny-hop: every hop that leaves the ground the instant you land builds a bit more speed.</li>
+          <li><b>Slide</b>: press Shift while running. The slide follows your mouse.</li>
+          <li><b>Slide-hop</b> (the fast way to move): jump, press Shift just before you land, then jump again as you slide. Every chained slide-hop adds speed, up to 16 m/s. Holding Space and Shift together does it automatically.</li>
+          <li><b>Air control</b>: hold W in the air and turn the mouse to curve your jump without losing speed. A or D plus turning also builds speed (air strafing).</li>
+          <li><b>Ledge climb</b>: hold Space + W against a ledge up to 1.8 m high.</li>
+          <li><b>Switch weapons</b> with 1, 2 and 3. <b>Shoot</b> with left click, <b>aim</b> with right click, <b>reload</b> with R, <b>scoreboard</b> on Tab.</li>
+          <li><b>Wall-jump</b>: hold a Snake weapon (key 2 by default) and jump into a wall in the air, up to 3 times.</li>
           <li><b>Rocket-jump</b>: with the Bomber or Rocketeer Pistols, shoot the floor under you as you jump.</li>
-          <li><b>Armory</b>: pick your loadout and skin rarity, and see every weapon as a hologram.</li>
         </ul>
         <div class="sheet-actions"><button id="c-close" class="btn btn-primary">Got it</button></div>
       </div>

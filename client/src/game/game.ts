@@ -144,7 +144,8 @@ export class Game {
     switch (e) {
       case 'jump': this.sfx.jump(); break;
       case 'land': this.sfx.land(); this.dipVel -= 1.6; this.viewmodel.land(); break;
-      case 'slide': this.sfx.slide(); break;
+      case 'slide': case 'slideChain': this.sfx.slide(); break;
+      case 'slideHop': this.sfx.slideHop(); break;
       case 'wallJump': this.sfx.wallJump(); break;
       case 'climb': this.sfx.climb(); break;
       default: break;
