@@ -2,7 +2,7 @@
  * Blockfire on Cloudflare: the game page and the online server in one free Worker.
  *
  *   /            the game (static files from client/dist)
- *   /ws          join a match (WebSocket). Query: mode=quick|create|join, map, code
+ *   /ws          join a match (WebSocket). Query: mode=quick|create|join, map, code, gm (game mode for Quick Play)
  *   /health      {"ok":true, rooms, players, protocol}
  *
  * Every room is its own Durable Object (GameRoom), named by its room code, running the same
@@ -14,8 +14,8 @@
  * If it's ever used up, joining fails until the daily reset (08:00 Malaysia time) — never a bill.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { PROTOCOL, ROOM_SIZE, TICK_RATE, makeRng, makeRoomCode, type ServerMsg } from '@blockfire/shared';
-import { Room, type Connection } from '../src/room.js';
+import { PROTOCOL, ROOM_SIZE, TICK_RATE, cleanMode, makeRng, makeRoomCode, type ModeId, type ServerMsg } from '@blockfire/shared';
+import { Room, cleanRules, type Connection } from '../src/room.js';
 import { MAX_MSG_BYTES, Session, cleanCode, cleanMap } from '../src/session.js';
 
 export interface Env {
@@ -31,7 +31,7 @@ const MAX_ROOMS = 100;
 /** A room the Lobby hasn't heard from for this long is forgotten. */
 const STALE_MS = 120_000;
 
-interface RoomInfo { map: string; isPublic: boolean; humans: number; seen: number }
+interface RoomInfo { map: string; mode: ModeId; isPublic: boolean; humans: number; seen: number }
 
 export class Lobby extends DurableObject<Env> {
   private rooms = new Map<string, RoomInfo>();
@@ -49,24 +49,24 @@ export class Lobby extends DurableObject<Env> {
   }
 
   /** Which room a Quick Play or Create should go to. Counts the player in right away so two quick joins don't overfill a room. */
-  assign(mode: 'quick' | 'create', map: string): { code: string } | { error: string } {
+  assign(mode: 'quick' | 'create', map: string, game: ModeId = 'ffa'): { code: string } | { error: string } {
     this.prune();
     if (mode === 'quick') {
       const open = [...this.rooms.entries()]
-        .filter(([, r]) => r.isPublic && r.map === map && r.humans < ROOM_SIZE)
+        .filter(([, r]) => r.isPublic && r.map === map && r.mode === game && r.humans < ROOM_SIZE)
         .sort((a, b) => b[1].humans - a[1].humans)[0];
       if (open) { open[1].humans += 1; return { code: open[0] }; }
     }
     if (this.rooms.size >= MAX_ROOMS) return { error: 'The server is full right now. Try again in a minute.' };
     const code = this.newCode();
-    this.rooms.set(code, { map, isPublic: mode === 'quick', humans: 1, seen: Date.now() });
+    this.rooms.set(code, { map, mode: game, isPublic: mode === 'quick', humans: 1, seen: Date.now() });
     return { code };
   }
 
   /** Rooms report how many people they have; 0 with closed=true removes the room. */
-  report(code: string, map: string, isPublic: boolean, humans: number, closed: boolean): void {
+  report(code: string, map: string, mode: ModeId, isPublic: boolean, humans: number, closed: boolean): void {
     if (closed) { this.rooms.delete(code); return; }
-    this.rooms.set(code, { map, isPublic, humans, seen: Date.now() });
+    this.rooms.set(code, { map, mode, isPublic, humans, seen: Date.now() });
   }
 
   stats(): { ok: true; rooms: number; players: number; protocol: number } {
@@ -101,11 +101,11 @@ export class GameRoom extends DurableObject<Env> {
       close() { try { socket.close(1000, 'bye'); } catch { /* closed */ } },
     };
 
-    if (!this.room && mode !== 'join') {
-      this.room = new Room(code, isPublic, map, Math.floor(Math.random() * 1e9));
-    }
-
-    const session = new Session(conn, () => {
+    const session = new Session(conn, (msg) => {
+      // The first player in makes the room, with their rules (Create = custom rules, Quick Play = the mode's defaults).
+      if (!this.room && mode !== 'join') {
+        this.room = new Room(code, isPublic, map, Math.floor(Math.random() * 1e9), cleanRules(msg.game, mode === 'create'));
+      }
       if (!this.room) return 'No room with that code.';
       if (this.room.full) return 'That room is full.';
       return this.room;
@@ -158,7 +158,7 @@ export class GameRoom extends DurableObject<Env> {
     if (!room) return;
     this.reportTimer = Date.now();
     const lobby = this.env.LOBBY.getByName('lobby');
-    this.ctx.waitUntil(lobby.report(room.code, room.mapId, room.isPublic, room.humanCount, closed).catch(() => {}));
+    this.ctx.waitUntil(lobby.report(room.code, room.mapId, room.mode, room.isPublic, room.humanCount, closed).catch(() => {}));
   }
 }
 
@@ -178,7 +178,7 @@ export default {
       const map = cleanMap(url.searchParams.get('map'));
       let code = cleanCode(url.searchParams.get('code'));
       if (mode !== 'join') {
-        const got = await env.LOBBY.getByName('lobby').assign(mode, map);
+        const got = await env.LOBBY.getByName('lobby').assign(mode, map, cleanMode(url.searchParams.get('gm')));
         if ('error' in got) return refuse(got.error);
         code = got.code;
       } else if (code.length !== 6) {

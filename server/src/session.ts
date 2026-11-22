@@ -10,6 +10,9 @@ import type { Connection, Room } from './room.js';
 
 /** Messages a player may send per second before extras are ignored (normal play is about 30). */
 const MAX_MSG_PER_SEC = 120;
+/** Chat: a burst of 3 lines, then one every 1.5 s. */
+const CHAT_BURST = 3;
+const CHAT_EVERY_MS = 1500;
 /** Longest message a player may send (a join message is a few hundred bytes). */
 export const MAX_MSG_BYTES = 4096;
 
@@ -49,6 +52,9 @@ export class Session {
   fighterId = -1;
   private tokens = MAX_MSG_PER_SEC;
   private lastRefill = Date.now();
+  private chatTokens = CHAT_BURST;
+  private chatRefill = Date.now();
+  private reported = new Set<number>();
 
   constructor(private conn: Connection, private pickRoom: RoomPicker, private onJoined?: (room: Room) => void) {}
 
@@ -76,7 +82,21 @@ export class Session {
     }
     if (!this.room) return;
     if (msg.t === 'in') this.input(msg);
-    else if (msg.t === 'ib' && Array.isArray(msg.i)) for (const one of msg.i.slice(0, 8)) this.input(one);
+    else if (msg.t === 'ib' && Array.isArray(msg.i)) {
+      for (const one of msg.i.slice(0, 8)) this.input(one);
+      if (typeof msg.vd === 'number') this.room.setViewDelay(this.fighterId, msg.vd);
+    } else if (msg.t === 'chat') {
+      this.chatTokens = Math.min(CHAT_BURST, this.chatTokens + (now - this.chatRefill) / CHAT_EVERY_MS);
+      this.chatRefill = now;
+      if (this.chatTokens < 1) {
+        this.conn.send({ t: 'chat', id: -1, name: 'Server', text: 'Slow down a little.', team: false });
+        return;
+      }
+      if (this.room.chat(this.fighterId, msg.text, !!msg.team) !== 'empty') this.chatTokens -= 1;
+    } else if (msg.t === 'report' && Number.isInteger(msg.id) && !this.reported.has(msg.id) && this.reported.size < 10) {
+      this.reported.add(msg.id);
+      this.room.report(this.fighterId, msg.id, msg.reason);
+    }
   }
 
   onClose(): void {

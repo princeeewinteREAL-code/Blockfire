@@ -4,9 +4,10 @@
  * Bots fill empty places so a room always has 8 fighters.
  */
 import {
-  BLOCKTOWN, Match, NEON_YARD, ROOM_SIZE, SLOTS, SNAPSHOT_EVERY, TICK_RATE, botLoadout, botName, botThink, createBrain,
-  idleInput, makeRng, r3, type BotBrain, type Fighter, type FighterInput, type MapDef, type MatchEvent, type RarityId,
-  type RosterEntry, type ServerMsg, type SnapFighter, type SnapMsg, type Loadout3,
+  BLOCKTOWN, MODE_BY_ID, Match, NEON_YARD, ROOM_SIZE, SLOTS, SNAPSHOT_EVERY, TICK_RATE, botLoadout, botName, botThink,
+  createBrain, filterChat, idleInput, makeRng, r3, type BotBrain, type BotDifficulty, type Fighter, type FighterInput,
+  type GameRules, type MapDef, type MatchEvent, type ModeId, type RarityId, type RosterEntry, type ServerMsg,
+  type SnapFighter, type SnapMsg, type Loadout3,
 } from '@blockfire/shared';
 
 export interface Connection {
@@ -26,11 +27,36 @@ interface Human {
   starved: number;
 }
 
+export type ChatResult = 'ok' | 'muted' | 'empty';
+
 const MAPS: Record<string, MapDef> = { blocktown: BLOCKTOWN, 'neon-yard': NEON_YARD };
 const DT = 1 / TICK_RATE;
 /** At most this many inputs wait in a player's queue (drops old ones if a player lags). */
 const MAX_QUEUE = 6;
 const RESTART_AFTER = 10;
+/** Lag compensation never looks back further than this many ticks (0.3 s). */
+const MAX_VIEW_DELAY = 18;
+/** Reports from this many different players mute someone's chat for the rest of the room. */
+const MUTE_AFTER_REPORTS = 2;
+
+/** A room's rules with every value filled in and checked. */
+export interface RoomRules { mode: ModeId; scoreLimit: number; timeLimit: number; bots: boolean; botLevel: BotDifficulty }
+
+export function cleanRules(raw: Partial<GameRules> | undefined, custom: boolean): RoomRules {
+  const mode = raw?.mode && raw.mode in MODE_BY_ID ? raw.mode : 'ffa';
+  const def = MODE_BY_ID[mode];
+  const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.max(lo, Math.min(hi, v))) : d);
+  const levels = ['easy', 'normal', 'hard', 'insane'];
+  if (!custom) return { mode, scoreLimit: def.scoreLimit, timeLimit: def.timeLimit, bots: true, botLevel: 'normal' };
+  return {
+    mode,
+    // Gun Game always means "finish the ladder".
+    scoreLimit: mode === 'gungame' ? def.scoreLimit : num(raw?.scoreLimit, 1, 200, def.scoreLimit),
+    timeLimit: num(raw?.timeLimit, 60, 1800, def.timeLimit),
+    bots: raw?.bots !== false,
+    botLevel: levels.includes(String(raw?.botLevel)) ? (raw!.botLevel as BotDifficulty) : 'normal',
+  };
+}
 
 export class Room {
   match!: Match;
@@ -43,11 +69,17 @@ export class Room {
   private overFor = 0;
   private botCounter = 0;
   private emptyFor = 0;
+  /** Who reported whom: target name → reporter names (names survive a new match; ids don't matter here). */
+  private reports = new Map<string, Set<string>>();
+  readonly rules: RoomRules;
 
-  constructor(readonly code: string, readonly isPublic: boolean, readonly mapId: string, seed: number) {
+  constructor(readonly code: string, readonly isPublic: boolean, readonly mapId: string, seed: number, rules?: RoomRules) {
     this.rand = makeRng(seed);
+    this.rules = rules ?? cleanRules(undefined, false);
     this.newMatch();
   }
+
+  get mode(): ModeId { return this.rules.mode; }
 
   get map(): MapDef { return MAPS[this.mapId] ?? BLOCKTOWN; }
   get humanCount(): number { return this.humans.size; }
@@ -57,7 +89,9 @@ export class Room {
 
   private newMatch(): void {
     const old = this.match;
-    this.match = new Match(this.map, { scoreLimit: 30, timeLimit: 360 }, Math.floor(this.rand() * 1e9));
+    this.match = new Match(this.map, {
+      scoreLimit: this.rules.scoreLimit, timeLimit: this.rules.timeLimit, mode: this.rules.mode, lagComp: true,
+    }, Math.floor(this.rand() * 1e9));
     this.brains.clear();
     this.botRarity.clear();
     this.overFor = 0;
@@ -65,7 +99,7 @@ export class Room {
       // Keep everyone who is still connected, with the same id, in the new match.
       for (const h of this.humans.values()) {
         const f = old.byId(h.fighterId);
-        if (f) this.match.addFighter(f.name, f.loadout, false, f.id);
+        if (f) this.match.addFighter(f.name, f.picked, false, f.id);
       }
     }
     this.fillBots();
@@ -74,16 +108,19 @@ export class Room {
   }
 
   private fillBots(): void {
+    if (!this.rules.bots) return;
     while (this.match.fighters.length < ROOM_SIZE) {
       const f = this.match.addFighter(botName(this.botCounter++), botLoadout(this.rand), true);
-      this.brains.set(f.id, createBrain('normal', Math.floor(this.rand() * 1e6)));
+      this.brains.set(f.id, createBrain(this.rules.botLevel, Math.floor(this.rand() * 1e6)));
       this.botRarity.set(f.id, {});
     }
   }
 
   /** A player joins: they take a bot's place. */
   join(conn: Connection, name: string, loadout: Loadout3, rarity: Record<string, RarityId>): number {
-    const bot = this.match.fighters.find((f) => f.isBot);
+    // Take a bot's place: in Team Deathmatch, one from the bigger team, so teams stay even.
+    const big = this.match.teams ? (this.match.smallerTeam() === 1 ? 2 : 1) : 0;
+    const bot = this.match.fighters.find((f) => f.isBot && (!big || f.team === big)) ?? this.match.fighters.find((f) => f.isBot);
     if (bot) {
       this.match.removeFighter(bot.id);
       this.brains.delete(bot.id);
@@ -91,7 +128,10 @@ export class Room {
     }
     const f = this.match.addFighter(this.uniqueName(name), loadout, false);
     this.humans.set(f.id, { conn, fighterId: f.id, name: f.name, rarity, queue: [], last: idleInput(), ack: 0, starved: 0 });
-    conn.send({ t: 'welcome', id: f.id, code: this.code, map: this.mapId, scoreLimit: this.match.settings.scoreLimit, timeLimit: this.match.settings.timeLimit });
+    conn.send({
+      t: 'welcome', id: f.id, code: this.code, map: this.mapId, scoreLimit: this.match.settings.scoreLimit,
+      timeLimit: this.match.settings.timeLimit, mode: this.rules.mode, isPublic: this.isPublic,
+    });
     this.broadcastRoster();
     return f.id;
   }
@@ -108,6 +148,44 @@ export class Room {
     this.match.removeFighter(fighterId);
     this.fillBots();
     this.broadcastRoster();
+  }
+
+  /** How late this player sees everyone else (ticks), for lag compensation. */
+  setViewDelay(fighterId: number, ticks: number): void {
+    const f = this.match.byId(fighterId);
+    if (f && Number.isFinite(ticks)) f.viewDelay = Math.max(0, Math.min(MAX_VIEW_DELAY, Math.round(ticks)));
+  }
+
+  /** A chat line from a player. Team chat only reaches teammates (in Team Deathmatch). */
+  chat(fighterId: number, raw: unknown, teamOnly: boolean): ChatResult {
+    const h = this.humans.get(fighterId);
+    const f = this.match.byId(fighterId);
+    if (!h || !f) return 'empty';
+    const text = filterChat(raw);
+    if (!text) return 'empty';
+    const team = teamOnly && this.match.teams;
+    const msg: ServerMsg = { t: 'chat', id: f.id, name: f.name, text, team };
+    if ((this.reports.get(f.name)?.size ?? 0) >= MUTE_AFTER_REPORTS) {
+      h.conn.send(msg); // a muted player still sees their own message, so they don't just spam it again
+      return 'muted';
+    }
+    for (const o of this.humans.values()) {
+      if (team && this.match.byId(o.fighterId)?.team !== f.team) continue;
+      o.conn.send(msg);
+    }
+    return 'ok';
+  }
+
+  /** A player reports another. Logged for the admins; enough reports mute the player's chat here. */
+  report(fighterId: number, targetId: number, reason: unknown): void {
+    const from = this.match.byId(fighterId);
+    const target = this.match.byId(targetId);
+    if (!from || !target || target.isBot || from === target) return;
+    const set = this.reports.get(target.name) ?? new Set<string>();
+    set.add(from.name);
+    this.reports.set(target.name, set);
+    console.log(JSON.stringify({ kind: 'report', room: this.code, from: from.name, target: target.name, reason: String(reason ?? '').slice(0, 60), count: set.size }));
+    this.humans.get(fighterId)?.conn.send({ t: 'chat', id: -1, name: 'Server', text: `Thanks, your report on ${target.name} was sent.`, team: false });
   }
 
   input(fighterId: number, seq: number, input: FighterInput): void {
@@ -147,7 +225,7 @@ export class Room {
 
   private roster(): RosterEntry[] {
     return this.match.fighters.map((f) => ({
-      id: f.id, name: f.name, bot: f.isBot, loadout: f.loadout,
+      id: f.id, name: f.name, bot: f.isBot, loadout: f.picked, team: f.team,
       rarity: f.isBot ? this.botRarity.get(f.id) ?? {} : this.humans.get(f.id)?.rarity ?? {},
     }));
   }
@@ -172,6 +250,7 @@ export class Room {
       d: f.deaths,
       rs: r3(f.respawnIn),
       fa: r3(f.firedAt),
+      ...(this.match.mode === 'gungame' ? { lv: f.level } : {}),
     };
   }
 
@@ -186,6 +265,7 @@ export class Room {
       const msg: SnapMsg = {
         t: 'snap', tick: this.tickCount, time: r3(m.time), ack: h.ack, f: fighters, pj, ev,
         over: m.over, winner: m.winner,
+        ...(m.teams ? { ts: [m.teamScore[1]!, m.teamScore[2]!] as [number, number], wt: m.winnerTeam } : {}),
       };
       if (me) {
         msg.me = { ...me.p, pos: { ...me.p.pos }, vel: { ...me.p.vel } };

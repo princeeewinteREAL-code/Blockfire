@@ -1,7 +1,8 @@
 import './style.css';
 import * as THREE from 'three';
 import {
-  BLOCKTOWN, NEON_YARD, RARITIES, RARITY_BY_ID, TEST_MAP, WEAPON_BY_ID, bodyTtk, weaponsInSlot, type RarityId, type Slot, type WeaponDef,
+  BLOCKTOWN, MODES, MODE_BY_ID, NEON_YARD, RARITIES, RARITY_BY_ID, TEAM_COLORS, TEAM_NAMES, TEST_MAP, WEAPON_BY_ID, bodyTtk,
+  weaponsInSlot, type GameRules, type ModeId, type RarityId, type Slot, type WeaponDef,
 } from '@blockfire/shared';
 import { Game, formatTime } from './game/game.js';
 import { FfaGame } from './game/ffa.js';
@@ -108,8 +109,9 @@ async function startPlaying(next?: 'parkour' | 'ffa', fresh = false): Promise<vo
     game.refreshWeapon();
   } else {
     const map = settings.map === 'neon-yard' ? NEON_YARD : BLOCKTOWN;
-    if (!ffa || fresh || ffa.over) ffa = new FfaGame(map, input, sfx, getSettings, gfx, getLoadout, settings.botLevel, map === BLOCKTOWN ? 9 : 7);
-    $('f-board-title').textContent = `Free For All · ${map.name}`;
+    if (!ffa || fresh || ffa.over) ffa = new FfaGame(map, input, sfx, getSettings, gfx, getLoadout, settings.botLevel, map === BLOCKTOWN ? 9 : 7, settings.gameMode);
+    $('f-board-title').textContent = `${MODE_BY_ID[ffa.match.mode].name} · ${map.name}`;
+    chatReset();
     ffa.refreshWeapon();
   }
   resize();
@@ -123,6 +125,19 @@ async function startPlaying(next?: 'parkour' | 'ffa', fresh = false): Promise<vo
 }
 
 // ---------- Online ----------
+/** The rules to send: Quick Play just picks the mode; a private room sends the custom rules. */
+function roomRules(mode: 'quick' | 'create' | 'join'): GameRules {
+  const gameMode = settings.gameMode;
+  if (mode !== 'create') return { mode: gameMode };
+  return {
+    mode: gameMode,
+    scoreLimit: Number($<HTMLInputElement>('o-score').value) || MODE_BY_ID[gameMode].scoreLimit,
+    timeLimit: Number($<HTMLSelectElement>('o-time').value) || MODE_BY_ID[gameMode].timeLimit,
+    bots: $<HTMLInputElement>('o-bots').checked,
+    botLevel: settings.botLevel,
+  };
+}
+
 async function startOnline(mode: 'quick' | 'create' | 'join', code = ''): Promise<void> {
   const url = serverUrl();
   if (!url) { toast('Online play needs the game server, which is not set up yet.'); return; }
@@ -131,8 +146,9 @@ async function startOnline(mode: 'quick' | 'create' | 'join', code = ''): Promis
   saveSettings(settings);
   if (ffa instanceof OnlineGame) ffa.leave();
   const map = settings.map === 'neon-yard' ? NEON_YARD : BLOCKTOWN;
-  ffa = new OnlineGame(map, input, sfx, getSettings, gfx, getLoadout, url, mode, code.toUpperCase(), name);
+  ffa = new OnlineGame(map, input, sfx, getSettings, gfx, getLoadout, url, mode, code.toUpperCase(), name, roomRules(mode));
   $('f-board-title').textContent = `Online · ${map.name}`;
+  chatReset();
   show('online', false);
   toast('Connecting…', 2000);
   await startPlaying('ffa');
@@ -144,9 +160,29 @@ function openOnline(): void {
   const url = serverUrl();
   $('o-server').textContent = url ? `Server: ${url.replace(/^wss?:\/\//, '')}` : 'The online server is not set up yet. Free For All vs bots works offline.';
   $<HTMLInputElement>('o-name').value = settings.name;
+  renderOnlineRules();
   show('menu', false);
   show('online', true);
 }
+
+function renderOnlineRules(): void {
+  const sel = $<HTMLSelectElement>('o-mode');
+  if (!sel.options.length) sel.innerHTML = MODES.map((m) => `<option value="${m.id}">${m.name}</option>`).join('');
+  sel.value = settings.gameMode;
+  const def = MODE_BY_ID[settings.gameMode];
+  $('o-mode-blurb').textContent = def.blurb;
+  const score = $<HTMLInputElement>('o-score');
+  score.value = String(def.scoreLimit);
+  score.disabled = def.id === 'gungame';
+  $('o-score-label').textContent = def.id === 'tdm' ? 'Team kills to win' : def.id === 'gungame' ? 'Guns (fixed)' : 'Kills to win';
+  $<HTMLSelectElement>('o-time').value = String(def.timeLimit);
+}
+$<HTMLSelectElement>('o-mode').addEventListener('change', () => {
+  settings = { ...settings, gameMode: $<HTMLSelectElement>('o-mode').value as ModeId };
+  saveSettings(settings);
+  renderLevels();
+  renderOnlineRules();
+});
 $('play-online').addEventListener('click', openOnline);
 $('o-close').addEventListener('click', () => { sfx.click(); show('online', false); show('menu', true); });
 $('o-quick').addEventListener('click', () => void startOnline('quick'));
@@ -159,14 +195,50 @@ $('o-join').addEventListener('click', () => {
 
 function pause(): void {
   if (mode !== 'playing') return;
+  closeChat(false);
   mode = 'paused';
   input.setEnabled(false);
   input.unlock();
+  renderPlayers();
   show('pause', true);
+}
+
+/** Pause menu (online): mute or report other players. */
+function renderPlayers(): void {
+  const box = $('pause-players');
+  const o = ffa instanceof OnlineGame ? ffa : null;
+  const people = o ? o.match.fighters.filter((f) => !f.isBot && f.id !== o.me.id) : [];
+  box.hidden = !o;
+  if (!o) return;
+  box.innerHTML = '<h3>Players</h3>';
+  if (!people.length) box.insertAdjacentHTML('beforeend', '<p class="note">Nobody else here yet, only bots.</p>');
+  for (const f of people) {
+    const row = document.createElement('div');
+    row.className = 'p';
+    const name = document.createElement('span');
+    name.textContent = f.name;
+    if (f.team) name.style.color = TEAM_COLORS[f.team]!;
+    const mute = document.createElement('button');
+    const muted = o.muted.has(f.name);
+    mute.textContent = muted ? 'Unmute' : 'Mute';
+    mute.className = muted ? 'on' : '';
+    mute.onclick = () => { sfx.click(); o.toggleMute(f.name); renderPlayers(); };
+    const rep = document.createElement('button');
+    rep.textContent = 'Report';
+    rep.onclick = () => {
+      sfx.click();
+      o.report(f.id, 'abuse');
+      rep.textContent = 'Reported';
+      rep.disabled = true;
+    };
+    row.append(name, mute, rep);
+    box.append(row);
+  }
 }
 
 function toMenu(): void {
   if (ffa instanceof OnlineGame) { ffa.leave(); ffa = null; }
+  closeChat(false);
   mode = 'menu';
   input.setEnabled(false);
   input.unlock();
@@ -187,13 +259,25 @@ $('play-ffa').addEventListener('click', () => void startPlaying('ffa', true));
 $('resume').addEventListener('click', () => void startPlaying());
 $('end-again').addEventListener('click', () => {
   if (lastWasOnline) void startOnline('quick'); else void startPlaying('ffa', true);
+  show('match-end', false);
 });
 $('end-menu').addEventListener('click', () => { sfx.click(); toMenu(); });
 
 function renderLevels(): void {
   document.querySelectorAll<HTMLButtonElement>('.lvlbtn').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['level'] === settings.botLevel)));
   document.querySelectorAll<HTMLButtonElement>('.mapbtn').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['map'] === settings.map)));
+  document.querySelectorAll<HTMLButtonElement>('.modebtn').forEach((b) => b.setAttribute('aria-checked', String(b.dataset['mode'] === settings.gameMode)));
+  $('mode-blurb').textContent = `${MODE_BY_ID[settings.gameMode].name} · ${MODE_BY_ID[settings.gameMode].blurb}`;
 }
+document.querySelectorAll<HTMLButtonElement>('.modebtn').forEach((b) => {
+  b.addEventListener('click', () => {
+    sfx.unlock();
+    sfx.click();
+    settings = { ...settings, gameMode: b.dataset['mode'] as ModeId };
+    saveSettings(settings);
+    renderLevels();
+  });
+});
 document.querySelectorAll<HTMLButtonElement>('.lvlbtn').forEach((b) => {
   b.addEventListener('click', () => {
     sfx.unlock();
@@ -511,8 +595,21 @@ function esc(t: string): string {
   return t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-function standingsRows(rows: ReturnType<FfaGame['hud']>['standings']): string {
-  return rows.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(r.name)}</td><td>${r.kills}</td><td>${r.deaths}</td></tr>`).join('');
+type Hud = ReturnType<FfaGame['hud']>;
+
+function standingsHead(h: Hud): string {
+  return `<tr><th>#</th><th>Player</th><th>${h.gun ? 'Gun' : 'Kills'}</th><th>${h.gun ? 'Kills' : 'Deaths'}</th></tr>`;
+}
+
+function standingsRows(rows: Hud['standings'], h: Hud): string {
+  // Team Deathmatch: your team first, then the other.
+  const list = h.teams ? [...rows].sort((a, b) => Number(b.team === h.teams!.mine) - Number(a.team === h.teams!.mine)) : rows;
+  return list.map((r, i) => {
+    const dot = r.team ? `<i class="dot" style="background:${TEAM_COLORS[r.team]}"></i>` : '';
+    const a = h.gun ? `${r.level + 1}` : `${r.kills}`;
+    const b = h.gun ? `${r.kills}` : `${r.deaths}`;
+    return `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td>${dot}${esc(r.name)}</td><td>${a}</td><td>${b}</td></tr>`;
+  }).join('');
 }
 
 function updateFfaHud(dt: number): void {
@@ -525,9 +622,27 @@ function updateFfaHud(dt: number): void {
   f$.hit.classList.toggle('head', h.hitHead);
   const m = Math.floor(h.timeLeft / 60);
   f$.clock.textContent = `${m}:${String(Math.floor(h.timeLeft % 60)).padStart(2, '0')}`;
-  f$.mine.textContent = String(h.myKills);
   const leadOther = h.standings.find((r) => !r.me);
-  f$.lead.textContent = String(leadOther?.kills ?? 0);
+  f$.mine.className = 'you';
+  f$.lead.className = 'lead';
+  let goal = `first to ${h.scoreLimit}`;
+  if (h.teams) {
+    // Your team's score on the left, the other team's on the right.
+    const mine = h.teams.mine || 1;
+    const other = mine === 1 ? 2 : 1;
+    f$.mine.textContent = String(mine === 1 ? h.teams.red : h.teams.blue);
+    f$.lead.textContent = String(other === 1 ? h.teams.red : h.teams.blue);
+    f$.mine.classList.add(`team-${mine}`);
+    f$.lead.classList.add(`team-${other}`);
+    goal = `${TEAM_NAMES[mine]} team (you) · first to ${h.scoreLimit}`;
+  } else if (h.gun) {
+    f$.mine.textContent = `${Math.min(h.gun.total, h.gun.level + 1)}`;
+    f$.lead.textContent = `${Math.min(h.gun.total, (leadOther?.level ?? 0) + 1)}`;
+    goal = `Gun ${Math.min(h.gun.total, h.gun.level + 1)} of ${h.gun.total}${h.gun.next ? ` · next: ${h.gun.next}` : ' · knife kill wins!'}`;
+  } else {
+    f$.mine.textContent = String(h.myKills);
+    f$.lead.textContent = String(leadOther?.kills ?? 0);
+  }
   if (ffa instanceof OnlineGame) {
     const o = ffa;
     if (o.status === 'error' || o.status === 'closed') {
@@ -536,9 +651,10 @@ function updateFfaHud(dt: number): void {
       return;
     }
     f$.sub.textContent = o.status === 'connecting' ? 'Connecting to the server…'
-      : `Room ${o.code} · ${Math.round(o.ping)} ms · first to ${h.scoreLimit}`;
+      : `${MODE_BY_ID[h.mode].name} · Room ${o.code} · ${Math.round(o.ping)} ms · ${goal}`;
+    updateChat(o);
   } else {
-    f$.sub.textContent = `You ${h.myKills} · best bot ${leadOther?.kills ?? 0} · first to ${h.scoreLimit}`;
+    f$.sub.textContent = h.teams || h.gun ? goal : `You ${h.myKills} · best bot ${leadOther?.kills ?? 0} · ${goal}`;
   }
 
   const key = h.feed.map((f) => f.killer + f.victim + f.age.toFixed(0)).join('|');
@@ -575,7 +691,7 @@ function updateFfaHud(dt: number): void {
   }
   const showBoard = input.held('scoreboard');
   f$.board.hidden = !showBoard;
-  if (showBoard) f$.boardRows.innerHTML = standingsRows(h.standings);
+  if (showBoard) { $('f-board-head').innerHTML = standingsHead(h); f$.boardRows.innerHTML = standingsRows(h.standings, h); }
 
   fpsFrames++;
   fpsTime += dt;
@@ -589,12 +705,106 @@ function endMatch(): void {
   input.unlock();
   const h = ffa.hud();
   const meFirst = h.standings[0]?.me;
-  $('end-title').textContent = meFirst ? 'You win!' : `${h.winner ?? 'A bot'} wins`;
+  if (h.teams) {
+    $('end-title').textContent = h.teams.winner === 0 ? `Draw · ${h.teams.red} to ${h.teams.blue}`
+      : h.teams.winner === h.teams.mine ? `Your team wins! ${Math.max(h.teams.red, h.teams.blue)} to ${Math.min(h.teams.red, h.teams.blue)}`
+      : `${TEAM_NAMES[h.teams.winner]} team wins · ${Math.max(h.teams.red, h.teams.blue)} to ${Math.min(h.teams.red, h.teams.blue)}`;
+  } else {
+    $('end-title').textContent = meFirst ? 'You win!' : `${h.winner ?? 'A bot'} wins`;
+  }
+  $('end-head').innerHTML = standingsHead(h);
   lastWasOnline = ffa instanceof OnlineGame;
   if (ffa instanceof OnlineGame) { ffa.leave(); }
-  $('end-rows').innerHTML = standingsRows(h.standings);
+  $('end-rows').innerHTML = standingsRows(h.standings, h);
+  closeChat(false);
   show('ffa-hud', false);
   show('match-end', true);
+}
+
+// ---------- Chat (online) ----------
+let chatOpen = false;
+let chatTeam = false;
+let chatKey = '';
+
+function chatReset(): void {
+  chatKey = '';
+  $('chat-log').innerHTML = '';
+  show('chat', ffa instanceof OnlineGame);
+}
+
+function openChat(team: boolean): void {
+  if (!(ffa instanceof OnlineGame) || chatOpen) return;
+  chatOpen = true;
+  chatTeam = team && !!ffa.match.teams;
+  input.setEnabled(false); // movement keys go into the text box while you type
+  $('chat').classList.add('open');
+  $('chat-to').textContent = chatTeam ? 'Team' : 'All';
+  show('chat-form', true);
+  show('chat-hint', false);
+  const box = $<HTMLInputElement>('chat-input');
+  box.value = '';
+  box.focus();
+}
+
+function closeChat(resume = true): void {
+  if (!chatOpen) return;
+  chatOpen = false;
+  $('chat').classList.remove('open');
+  show('chat-form', false);
+  show('chat-hint', true);
+  $<HTMLInputElement>('chat-input').blur();
+  if (resume && mode === 'playing') input.setEnabled(true);
+}
+
+/** Chat commands: /mute name, /unmute name, /report name, /help. Anything else is sent as chat. */
+function runChat(text: string): void {
+  const o = ffa instanceof OnlineGame ? ffa : null;
+  if (!o) return;
+  const m = /^\/(\w+)\s*(.*)$/.exec(text.trim());
+  if (!m) { o.sendChat(text, chatTeam); return; }
+  const [, cmd, arg] = m as unknown as [string, string, string];
+  const who = o.findPlayer(arg);
+  switch (cmd.toLowerCase()) {
+    case 'mute': case 'unmute':
+      if (!who) { o.note(`No player called "${arg}".`); break; }
+      o.note(o.toggleMute(who.name) ? `Muted ${who.name}.` : `Unmuted ${who.name}.`);
+      break;
+    case 'report':
+      if (!who) { o.note(`No player called "${arg}".`); break; }
+      o.report(who.id, 'chat command');
+      break;
+    default:
+      o.note('Commands: /mute name · /unmute name · /report name. Or use the pause menu (Esc).');
+  }
+}
+
+$('chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $<HTMLInputElement>('chat-input').value;
+  if (text.trim()) runChat(text);
+  closeChat();
+});
+$('chat-input').addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.code === 'Escape') { e.preventDefault(); closeChat(); }
+});
+window.addEventListener('keydown', (e) => {
+  if (mode !== 'playing' || chatOpen || !(ffa instanceof OnlineGame) || listening) return;
+  if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); openChat(false); }
+  else if (e.code === 'KeyY' && ffa.match.teams) { e.preventDefault(); openChat(true); }
+});
+
+function updateChat(o: OnlineGame): void {
+  const lines = o.chatLog.slice(-7);
+  const key = lines.map((l) => `${l.name}|${l.text}|${l.age > 10 ? 1 : 0}`).join('~');
+  if (key === chatKey) return;
+  chatKey = key;
+  $('chat-log').innerHTML = lines.map((l) => {
+    const who = l.name ? `<b style="color:${l.color}">${l.team ? '<i>[Team]</i>' : ''}${esc(l.name)}:</b>` : '';
+    const color = l.name ? '' : `color:${l.color};`;
+    return `<div style="${color}opacity:${l.age > 10 ? 0 : 1}">${who}${esc(l.text)}</div>`;
+  }).join('');
+  $('chat-hint').textContent = o.match.teams ? 'Enter to chat · Y for team chat' : 'Enter to chat';
 }
 
 // ---------- Resize + loop ----------

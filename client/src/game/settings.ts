@@ -1,3 +1,5 @@
+import type { ModeId } from '@blockfire/shared';
+
 export type Action =
   | 'forward' | 'back' | 'left' | 'right'
   | 'jump' | 'crouch' | 'walk'
@@ -30,6 +32,7 @@ export interface Settings {
   name: string;
   botLevel: BotLevel;
   map: FfaMap;
+  gameMode: ModeId;
   quality: import('./graphics.js').Quality;
   sensitivity: number;
   fov: number;
@@ -43,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   name: '',
   botLevel: 'easy',
   map: 'blocktown',
+  gameMode: 'ffa',
   quality: 'high',
   sensitivity: 1,
   fov: 100,
