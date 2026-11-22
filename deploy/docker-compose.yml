@@ -1,0 +1,32 @@
+# Runs the Blockfire game server behind Caddy, which gets a free HTTPS certificate
+# automatically so browsers can connect with wss://.
+#
+#   cd deploy
+#   DOMAIN=yourname.duckdns.org docker compose up -d --build
+services:
+  game:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?Set DOMAIN, e.g. DOMAIN=blockfire.duckdns.org}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - game
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -5,6 +5,7 @@ import {
 } from '@blockfire/shared';
 import { Game, formatTime } from './game/game.js';
 import { FfaGame } from './game/ffa.js';
+import { OnlineGame, serverUrl } from './game/online.js';
 import { Input } from './game/input.js';
 import { Sfx } from './game/audio.js';
 import { animateCharacter, buildCharacter } from './game/character.js';
@@ -78,6 +79,7 @@ let mode: Mode = 'menu';
 let game: Game | null = null;
 let ffa: FfaGame | null = null;
 let kind: 'parkour' | 'ffa' = 'ffa';
+let lastWasOnline = false;
 let usingFallbackLook = false;
 
 const show = (id: string, on: boolean) => { $(id).hidden = !on; };
@@ -100,6 +102,7 @@ async function startPlaying(next?: 'parkour' | 'ffa', fresh = false): Promise<vo
   sfx.unlock();
   sfx.click();
   if (next) kind = next;
+  if (fresh && ffa instanceof OnlineGame) { ffa.leave(); ffa = null; }
   if (kind === 'parkour') {
     if (!game) game = new Game(TEST_MAP, input, sfx, getSettings, gfx, getLoadout);
     game.refreshWeapon();
@@ -119,6 +122,41 @@ async function startPlaying(next?: 'parkour' | 'ffa', fresh = false): Promise<vo
   show('hud', kind === 'parkour'); show('ffa-hud', kind === 'ffa');
 }
 
+// ---------- Online ----------
+async function startOnline(mode: 'quick' | 'create' | 'join', code = ''): Promise<void> {
+  const url = serverUrl();
+  if (!url) { toast('Online play needs the game server, which is not set up yet.'); return; }
+  const name = ($<HTMLInputElement>('o-name').value.trim() || 'Player').slice(0, 18);
+  settings = { ...settings, name };
+  saveSettings(settings);
+  if (ffa instanceof OnlineGame) ffa.leave();
+  const map = settings.map === 'neon-yard' ? NEON_YARD : BLOCKTOWN;
+  ffa = new OnlineGame(map, input, sfx, getSettings, gfx, getLoadout, url, mode, code.toUpperCase(), name);
+  $('f-board-title').textContent = `Online · ${map.name}`;
+  show('online', false);
+  toast('Connecting…', 2000);
+  await startPlaying('ffa');
+}
+
+function openOnline(): void {
+  sfx.unlock();
+  sfx.click();
+  const url = serverUrl();
+  $('o-server').textContent = url ? `Server: ${url.replace(/^wss?:\/\//, '')}` : 'The online server is not set up yet. Free For All vs bots works offline.';
+  $<HTMLInputElement>('o-name').value = settings.name;
+  show('menu', false);
+  show('online', true);
+}
+$('play-online').addEventListener('click', openOnline);
+$('o-close').addEventListener('click', () => { sfx.click(); show('online', false); show('menu', true); });
+$('o-quick').addEventListener('click', () => void startOnline('quick'));
+$('o-create').addEventListener('click', () => void startOnline('create'));
+$('o-join').addEventListener('click', () => {
+  const code = $<HTMLInputElement>('o-code').value.trim();
+  if (code.length !== 6) { toast('Room codes are 6 letters and numbers.'); return; }
+  void startOnline('join', code);
+});
+
 function pause(): void {
   if (mode !== 'playing') return;
   mode = 'paused';
@@ -128,6 +166,7 @@ function pause(): void {
 }
 
 function toMenu(): void {
+  if (ffa instanceof OnlineGame) { ffa.leave(); ffa = null; }
   mode = 'menu';
   input.setEnabled(false);
   input.unlock();
@@ -146,7 +185,9 @@ window.addEventListener('keydown', (e) => {
 $('play').addEventListener('click', () => void startPlaying('parkour'));
 $('play-ffa').addEventListener('click', () => void startPlaying('ffa', true));
 $('resume').addEventListener('click', () => void startPlaying());
-$('end-again').addEventListener('click', () => void startPlaying('ffa', true));
+$('end-again').addEventListener('click', () => {
+  if (lastWasOnline) void startOnline('quick'); else void startPlaying('ffa', true);
+});
 $('end-menu').addEventListener('click', () => { sfx.click(); toMenu(); });
 
 function renderLevels(): void {
@@ -487,7 +528,18 @@ function updateFfaHud(dt: number): void {
   f$.mine.textContent = String(h.myKills);
   const leadOther = h.standings.find((r) => !r.me);
   f$.lead.textContent = String(leadOther?.kills ?? 0);
-  f$.sub.textContent = `You ${h.myKills} · best bot ${leadOther?.kills ?? 0} · first to ${h.scoreLimit}`;
+  if (ffa instanceof OnlineGame) {
+    const o = ffa;
+    if (o.status === 'error' || o.status === 'closed') {
+      toast(o.error || 'Disconnected.', 5000);
+      toMenu();
+      return;
+    }
+    f$.sub.textContent = o.status === 'connecting' ? 'Connecting to the server…'
+      : `Room ${o.code} · ${Math.round(o.ping)} ms · first to ${h.scoreLimit}`;
+  } else {
+    f$.sub.textContent = `You ${h.myKills} · best bot ${leadOther?.kills ?? 0} · first to ${h.scoreLimit}`;
+  }
 
   const key = h.feed.map((f) => f.killer + f.victim + f.age.toFixed(0)).join('|');
   if (key !== feedKey) {
@@ -538,6 +590,8 @@ function endMatch(): void {
   const h = ffa.hud();
   const meFirst = h.standings[0]?.me;
   $('end-title').textContent = meFirst ? 'You win!' : `${h.winner ?? 'A bot'} wins`;
+  lastWasOnline = ffa instanceof OnlineGame;
+  if (ffa instanceof OnlineGame) { ffa.leave(); }
   $('end-rows').innerHTML = standingsRows(h.standings);
   show('ffa-hud', false);
   show('match-end', true);

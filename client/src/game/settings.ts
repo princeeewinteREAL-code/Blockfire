@@ -27,6 +27,7 @@ export type BotLevel = 'easy' | 'normal' | 'hard' | 'insane';
 export type FfaMap = 'blocktown' | 'neon-yard';
 
 export interface Settings {
+  name: string;
   botLevel: BotLevel;
   map: FfaMap;
   quality: import('./graphics.js').Quality;
@@ -39,6 +40,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  name: '',
   botLevel: 'easy',
   map: 'blocktown',
   quality: 'high',

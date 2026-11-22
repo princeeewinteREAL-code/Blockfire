@@ -68,35 +68,37 @@ export class FfaGame {
   readonly camera: THREE.PerspectiveCamera;
   readonly world: BuiltWorld;
   readonly match: Match;
-  readonly me: Fighter;
-  private brains = new Map<number, BotBrain>();
-  private botRarity = new Map<string, RarityId>();
-  private viewmodel: Viewmodel;
-  private effects: Effects;
-  private avatars: Avatars;
-  private acc = 0;
-  private time = 0;
-  private prevPos: Vec3;
-  private eye = MOVEMENT.standHeight - MOVEMENT.eyeOffset;
-  private ads = 0;
-  private recoilPending = 0;
-  private wantSlot: Slot | undefined;
-  private feed: FeedItem[] = [];
-  private hitmarker = 0;
-  private hitHead = false;
-  private hurt = 0;
-  private killedBy: string | null = null;
-  private killedWith: string | null = null;
-  private deathPos = new THREE.Vector3();
-  private callout: string | null = null;
-  private calloutT = 0;
-  private stepClock = 0;
-  private shotCount = 0;
-  private rand = makeRng(Date.now() & 0xffff);
+  me: Fighter;
+  protected brains = new Map<number, BotBrain>();
+  protected botRarity = new Map<string, RarityId>();
+  protected viewmodel: Viewmodel;
+  protected effects: Effects;
+  protected avatars: Avatars;
+  protected acc = 0;
+  protected time = 0;
+  protected prevPos: Vec3;
+  protected eye = MOVEMENT.standHeight - MOVEMENT.eyeOffset;
+  protected ads = 0;
+  protected recoilPending = 0;
+  protected wantSlot: Slot | undefined;
+  protected feed: FeedItem[] = [];
+  protected hitmarker = 0;
+  protected hitHead = false;
+  protected hurt = 0;
+  protected killedBy: string | null = null;
+  protected killedWith: string | null = null;
+  protected deathPos = new THREE.Vector3();
+  protected callout: string | null = null;
+  protected calloutT = 0;
+  protected stepClock = 0;
+  protected shotCount = 0;
+  protected rand = makeRng(Date.now() & 0xffff);
+  /** Online: your shots are shown the instant you click, so the server's copy only draws the tracer. */
+  protected ownShotsPredicted = false;
 
   constructor(
-    map: MapDef, private input: Input, private sfx: Sfx, private settings: () => Settings,
-    graphics: Graphics, private loadout: () => Loadout, difficulty: BotDifficulty, bots = 7,
+    map: MapDef, protected input: Input, protected sfx: Sfx, protected settings: () => Settings,
+    graphics: Graphics, protected loadout: () => Loadout, difficulty: BotDifficulty, bots = 7,
   ) {
     this.world = buildWorld(map, graphics.renderer, graphics.shadowSize);
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420);
@@ -122,7 +124,7 @@ export class FfaGame {
     this.refreshWeapon();
   }
 
-  private rarityFor = (f: Fighter, weaponId: string): RarityId =>
+  protected rarityFor = (f: Fighter, weaponId: string): RarityId =>
     f.id === this.me.id ? rarityOf(this.loadout(), weaponId) : this.botRarity.get(`${f.id}|${weaponId}`) ?? 'basic';
 
   refreshWeapon(): void {
@@ -145,7 +147,7 @@ export class FfaGame {
     this.render(this.acc / TICK, dt);
   }
 
-  private tick(): void {
+  protected tick(): void {
     if (this.match.over) return;
     const me = this.me;
     this.prevPos = { ...me.p.pos };
@@ -187,7 +189,7 @@ export class FfaGame {
     this.feed = this.feed.filter((f) => f.age < 6).slice(-6);
   }
 
-  private where(p: Vec3): Where {
+  protected where(p: Vec3): Where {
     const c = this.camera.position;
     const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z;
     const d = Math.hypot(dx, dy, dz);
@@ -196,9 +198,9 @@ export class FfaGame {
     return { vol: Math.pow(Math.max(0, 1 - d / 70), 1.6), pan: pan * 0.8 };
   }
 
-  private v(p: Vec3): THREE.Vector3 { return new THREE.Vector3(p.x, p.y, p.z); }
+  protected v(p: Vec3): THREE.Vector3 { return new THREE.Vector3(p.x, p.y, p.z); }
 
-  private onEvent(e: MatchEvent): void {
+  protected onEvent(e: MatchEvent): void {
     const meId = this.me.id;
     switch (e.type) {
       case 'shot': {
@@ -209,8 +211,10 @@ export class FfaGame {
         let from: THREE.Vector3;
         if (e.shooter === meId) {
           from = this.viewmodel.muzzleWorld(new THREE.Vector3());
-          this.kick(w);
-          this.sfx.shot(e.weapon, { vol: 0.9 });
+          if (!this.ownShotsPredicted) {
+            this.kick(w);
+            this.sfx.shot(e.weapon, { vol: 0.9 });
+          }
         } else {
           const aim = new THREE.Vector3(-Math.sin(shooter.yaw), Math.sin(shooter.pitch), -Math.cos(shooter.yaw)).normalize();
           from = this.v(e.from).add(aim.multiplyScalar(0.7)).add(new THREE.Vector3(0, -0.3, 0));
@@ -272,7 +276,7 @@ export class FfaGame {
         const f = this.match.byId(e.id);
         if (!f) break;
         const where = e.id === meId ? {} : this.where(f.p.pos);
-        if (e.id === meId) this.viewmodel.fire(0);
+        if (e.id === meId && !this.ownShotsPredicted) this.viewmodel.fire(0);
         if (e.hit) this.sfx.stab(where); else this.sfx.swing(where);
         break;
       }
@@ -310,7 +314,7 @@ export class FfaGame {
   }
 
   /** Camera recoil for the local player's shots. */
-  private kick(w: WeaponDef): void {
+  protected kick(w: WeaponDef): void {
     const b = ballisticsOf(w);
     const amount = (b.recoil * Math.PI) / 180 * (this.me.ads ? 0.55 : 1);
     this.input.pitch = Math.min(1.5, this.input.pitch + amount);
@@ -318,7 +322,7 @@ export class FfaGame {
     this.viewmodel.fire(b.recoil);
   }
 
-  private render(alpha: number, dt: number): void {
+  protected render(alpha: number, dt: number): void {
     const me = this.me;
     const w = this.match.weaponOf(me);
     // Recoil recovery.
@@ -381,7 +385,7 @@ export class FfaGame {
     if (this.calloutT <= 0) this.callout = null;
   }
 
-  private hand(visible: boolean): void {
+  protected hand(visible: boolean): void {
     this.viewmodel.hand.visible = visible;
   }
 

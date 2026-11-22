@@ -19,7 +19,8 @@
       <div class="menu-panel">
         <h1 class="logo"><span>BLOCK</span><span class="fire">FIRE</span></h1>
         <p class="tag">Early build · Free For All vs bots</p>
-        <button id="play-ffa" class="btn btn-primary">Play · Free For All</button>
+        <button id="play-online" class="btn btn-primary">Play Online</button>
+        <button id="play-ffa" class="btn">Free For All vs bots</button>
         <div class="levels" role="radiogroup" aria-label="Bot difficulty">
           <span>Bots</span>
           <button class="lvl lvlbtn" data-level="easy" role="radio">Easy</button>
@@ -174,6 +175,26 @@
           <button id="s-reset" class="btn">Reset to defaults</button>
           <button id="s-close" class="btn btn-primary">Done</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Online -->
+    <section id="online" class="screen dim" hidden>
+      <div class="sheet">
+        <h2>Play Online</h2>
+        <p class="note" id="o-server"></p>
+        <label class="row check"><span>Your name</span><input id="o-name" maxlength="18" autocomplete="off" spellcheck="false" /></label>
+        <div class="online-actions">
+          <button id="o-quick" class="btn btn-primary">Quick Play</button>
+          <button id="o-create" class="btn">Create private room</button>
+        </div>
+        <h3>Join a friend</h3>
+        <div class="join-row">
+          <input id="o-code" maxlength="6" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code" />
+          <button id="o-join" class="btn">Join</button>
+        </div>
+        <p class="note">Bots fill any empty places, so a room always has 8 players. The map is the one picked on the menu.</p>
+        <div class="sheet-actions"><button id="o-close" class="btn">Back</button></div>
       </div>
     </section>
 
