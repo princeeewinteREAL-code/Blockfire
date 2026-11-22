@@ -12,11 +12,13 @@
 import type { FighterInput, Loadout3, MatchEvent } from './match.js';
 import type { PlayerState } from './movement.js';
 import type { RarityId, Slot } from './weapons.js';
+import type { ModeId } from './modes.js';
+import type { BotDifficulty } from './bots.js';
 
 export const TICK_RATE = 60;
 export const SNAPSHOT_EVERY = 3; // ticks → 20 snapshots per second
 export const ROOM_SIZE = 8;
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 /** Ticks of input packed into one message (fewer messages keeps the free Cloudflare plan going longer). */
 export const INPUTS_PER_MSG = 2;
 
@@ -31,16 +33,44 @@ export interface JoinMsg {
   mode: JoinMode;
   code?: string;
   map?: string;
+  /** Quick Play: which mode to look for. Create: the room's rules (a custom game). */
+  game?: GameRules;
+}
+
+/** The rules of a room. Anything missing uses the mode's defaults. */
+export interface GameRules {
+  mode: ModeId;
+  scoreLimit?: number;
+  timeLimit?: number;
+  /** Fill empty places with bots (default true). */
+  bots?: boolean;
+  botLevel?: BotDifficulty;
 }
 
 /** One tick of input. f = [forward, strafe, flags, yaw, pitch, slot?] */
 export interface InputMsg { t: 'in'; s: number; f: [number, number, number, number, number, number] }
 /** Several ticks of input in one message, oldest first. */
-export interface InputBatchMsg { t: 'ib'; i: InputMsg[] }
+export interface InputBatchMsg {
+  t: 'ib';
+  i: InputMsg[];
+  /** How many ticks late you see other players (your ping + the smoothing delay), for lag compensation. */
+  vd?: number;
+}
 
-export interface RosterEntry { id: number; name: string; bot: boolean; loadout: Loadout3; rarity: Record<string, RarityId> }
+export const CHAT_MAX = 120;
+/** Send a chat line. team = only your team sees it (Team Deathmatch). */
+export interface ChatSendMsg { t: 'chat'; text: string; team?: boolean }
+/** Report a player for bad behaviour. */
+export interface ReportMsg { t: 'report'; id: number; reason: string }
+/** A chat line from someone (id -1 = the server). */
+export interface ChatMsg { t: 'chat'; id: number; name: string; text: string; team: boolean }
 
-export interface WelcomeMsg { t: 'welcome'; id: number; code: string; map: string; scoreLimit: number; timeLimit: number }
+export interface RosterEntry { id: number; name: string; bot: boolean; loadout: Loadout3; rarity: Record<string, RarityId>; team: number }
+
+export interface WelcomeMsg {
+  t: 'welcome'; id: number; code: string; map: string; scoreLimit: number; timeLimit: number;
+  mode: ModeId; isPublic: boolean;
+}
 export interface RosterMsg { t: 'roster'; list: RosterEntry[] }
 export interface ErrorMsg { t: 'error'; message: string }
 
@@ -61,6 +91,8 @@ export interface SnapFighter {
   d: number;
   rs: number;
   fa: number;
+  /** Gun Game level. */
+  lv?: number;
 }
 
 export interface SnapMsg {
@@ -78,10 +110,13 @@ export interface SnapMsg {
   ev: MatchEvent[];
   over: boolean;
   winner: number | null;
+  /** Team Deathmatch: [red, blue] kills, and the winning team once over. */
+  ts?: [number, number];
+  wt?: number;
 }
 
-export type ServerMsg = WelcomeMsg | RosterMsg | SnapMsg | ErrorMsg;
-export type ClientMsg = JoinMsg | InputMsg | InputBatchMsg;
+export type ServerMsg = WelcomeMsg | RosterMsg | SnapMsg | ErrorMsg | ChatMsg;
+export type ClientMsg = JoinMsg | InputMsg | InputBatchMsg | ChatSendMsg | ReportMsg;
 
 export const SLOTS: Slot[] = ['primary', 'secondary', 'melee'];
 

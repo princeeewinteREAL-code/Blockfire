@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPON_BY_ID, horizontalSpeed, playerHeight, type Fighter, type RarityId } from '@blockfire/shared';
+import { TEAM_COLORS, WEAPON_BY_ID, horizontalSpeed, playerHeight, type Fighter, type RarityId } from '@blockfire/shared';
 import { animateCharacter, buildCharacter, type SkinColors } from './character.js';
 import { buildWeaponModel, type WeaponModel } from './weapon-models.js';
 
@@ -43,6 +43,7 @@ interface Avatar {
   skin: SkinColors;
   wasAlive: boolean;
   walk: number;
+  team: number;
 }
 
 /** Draws every other player as a blocky character holding their weapon. */
@@ -57,21 +58,25 @@ export class Avatars {
   }
 
   private create(f: Fighter): Avatar {
-    const skin = SKINS[f.id % SKINS.length]!;
+    const base = SKINS[f.id % SKINS.length]!;
+    // In Team Deathmatch everyone wears their team's colour.
+    const skin = f.team ? { ...base, shirt: TEAM_COLORS[f.team]!, pants: f.team === 1 ? '#5a1820' : '#16305e' } : base;
     const root = new THREE.Group();
     const body = buildCharacter(skin);
     root.add(body);
-    const tag = nameTag(f.name, f.isBot ? '#ffd36a' : '#7fe9ff');
+    const tag = nameTag(f.name, f.team ? TEAM_COLORS[f.team]! : f.isBot ? '#ffd36a' : '#7fe9ff');
     tag.position.y = 2.15;
     root.add(tag);
     this.scene.add(root);
-    return { root, body, tag, weapon: null, weaponKey: '', skin, wasAlive: true, walk: 0 };
+    return { root, body, tag, weapon: null, weaponKey: '', skin, wasAlive: true, walk: 0, team: f.team };
   }
 
   update(fighters: Fighter[], localId: number, dt: number, rarityFor: (f: Fighter, weaponId: string) => RarityId): void {
+    if (this.avatars.size > fighters.length - 1) this.prune(new Set(fighters.map((f) => f.id)));
     for (const f of fighters) {
       if (f.id === localId) continue;
       let a = this.avatars.get(f.id);
+      if (a && a.team !== f.team) { this.scene.remove(a.root); a = undefined; }
       if (!a) { a = this.create(f); this.avatars.set(f.id, a); }
       a.root.visible = f.alive;
       a.wasAlive = f.alive;
@@ -117,6 +122,11 @@ export class Avatars {
       a.body.visible = f.protectLeft <= 0 || Math.floor(f.protectLeft * 10) % 2 === 0;
       a.weapon?.finish.update(a.walk);
     }
+  }
+
+  /** Forget players who left. */
+  prune(ids: Set<number>): void {
+    for (const [id, a] of this.avatars) if (!ids.has(id)) { this.scene.remove(a.root); this.avatars.delete(id); }
   }
 
   clear(): void {

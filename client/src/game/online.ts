@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {
-  BLOCKTOWN, INPUTS_PER_MSG, NEON_YARD, PROTOCOL, SLOTS, WEAPON_BY_ID, encodeInput, stepPlayer,
-  type FighterInput, type MapDef, type MatchEvent, type MoveInput, type PlayerState, type RarityId, type RosterEntry,
-  type InputMsg, type ServerMsg, type SnapMsg, type JoinMode, type Slot,
+  BLOCKTOWN, CHAT_MAX, INPUTS_PER_MSG, NEON_YARD, PROTOCOL, SLOTS, TEAM_COLORS, WEAPON_BY_ID, allowedSlots, encodeInput,
+  modeSpeed, stepPlayer,
+  type FighterInput, type GameRules, type MapDef, type MatchEvent, type MoveInput, type PlayerState, type RarityId,
+  type RosterEntry, type InputMsg, type ServerMsg, type SnapMsg, type JoinMode, type Slot,
 } from '@blockfire/shared';
 import { FfaGame, TICK } from './ffa.js';
 import type { Input } from './input.js';
@@ -30,14 +31,16 @@ export function serverUrl(): string {
 }
 
 /** The full WebSocket address for joining: the Cloudflare server routes on these query values. */
-export function joinUrl(base: string, mode: JoinMode, code: string, map: string): string {
+export function joinUrl(base: string, mode: JoinMode, code: string, map: string, game = 'ffa'): string {
   const root = base.replace(/\/+$/, '').replace(/\/ws$/, '');
-  const q = new URLSearchParams({ mode, map });
+  const q = new URLSearchParams({ mode, map, gm: game });
   if (mode === 'join') q.set('code', code);
   return `${root}/ws?${q}`;
 }
 
 export type NetStatus = 'connecting' | 'playing' | 'error' | 'closed';
+
+export interface ChatLine { id: number; name: string; text: string; team: boolean; color: string; age: number }
 
 interface Sample { t: number; x: number; y: number; z: number; yaw: number; pitch: number }
 
@@ -68,22 +71,26 @@ export class OnlineGame extends FfaGame {
   private localFirePrev = false;
   private lastSlotChange = -1;
   private clock = 0;
+  isPublic = true;
+  chatLog: ChatLine[] = [];
+  /** Names whose chat you've hidden (this room only). */
+  muted = new Set<string>();
 
   constructor(
     map: MapDef, input: Input, sfx: Sfx, settings: () => Settings, graphics: Graphics, loadout: () => Loadout,
-    url: string, mode: JoinMode, code: string, name: string,
+    url: string, mode: JoinMode, code: string, name: string, game: GameRules = { mode: 'ffa' },
   ) {
-    super(map, input, sfx, settings, graphics, loadout, 'easy', 0);
+    super(map, input, sfx, settings, graphics, loadout, 'easy', 0, game.mode);
     this.ownShotsPredicted = true;
     // Until the server says who's who, nobody is in the match.
     this.match.fighters.length = 0;
-    this.ws = new WebSocket(joinUrl(url, mode, code, map.id));
+    this.ws = new WebSocket(joinUrl(url, mode, code, map.id, game.mode));
     this.ws.onopen = () => {
       const l = loadout();
       const rarity: Record<string, RarityId> = {};
       for (const id of [l.primary, l.secondary, l.melee]) rarity[id] = rarityOf(l, id);
       this.ws.send(JSON.stringify({
-        t: 'join', v: PROTOCOL, name, mode, code, map: map.id,
+        t: 'join', v: PROTOCOL, name, mode, code, map: map.id, game,
         loadout: { primary: l.primary, secondary: l.secondary, melee: l.melee }, rarity,
       }));
     };
@@ -97,6 +104,36 @@ export class OnlineGame extends FfaGame {
 
   leave(): void {
     try { this.ws.close(); } catch { /* already closed */ }
+  }
+
+  private send(msg: object): void {
+    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  sendChat(text: string, team: boolean): void {
+    const t = text.trim().slice(0, CHAT_MAX);
+    if (t) this.send({ t: 'chat', text: t, team });
+  }
+
+  /** Find a player in this room by (part of) their name. */
+  findPlayer(name: string) {
+    const n = name.trim().toLowerCase();
+    if (!n) return undefined;
+    const others = this.match.fighters.filter((f) => f.id !== this.myId && !f.isBot);
+    return others.find((f) => f.name.toLowerCase() === n) ?? others.find((f) => f.name.toLowerCase().startsWith(n));
+  }
+
+  report(id: number, reason: string): void { this.send({ t: 'report', id, reason }); }
+
+  toggleMute(name: string): boolean {
+    if (this.muted.has(name)) { this.muted.delete(name); return false; }
+    this.muted.add(name);
+    return true;
+  }
+
+  /** A line from you or the game itself, only on your screen. */
+  note(text: string): void {
+    this.chatLog.push({ id: -1, name: '', text, team: false, color: '#ffd23f', age: 0 });
   }
 
   protected rarityFor = (f: { id: number }, weaponId: string): RarityId => {
@@ -114,7 +151,18 @@ export class OnlineGame extends FfaGame {
         this.status = 'playing';
         this.match.settings.scoreLimit = m.scoreLimit;
         this.match.settings.timeLimit = m.timeLimit;
+        this.match.mode = m.mode;
+        this.isPublic = m.isPublic;
         break;
+      case 'chat': {
+        if (this.muted.has(m.name)) break;
+        const f = this.match.byId(m.id);
+        const color = m.id === -1 ? '#ffd23f' : f?.team ? TEAM_COLORS[f.team]! : m.id === this.myId ? '#7fe9ff' : '#ffffff';
+        this.chatLog.push({ id: m.id, name: m.id === this.myId ? 'You' : m.name, text: m.text, team: m.team, color, age: 0 });
+        if (this.chatLog.length > 40) this.chatLog.shift();
+        if (m.id !== this.myId) this.sfx.click();
+        break;
+      }
       case 'error':
         this.status = 'error';
         this.error = m.message;
@@ -134,7 +182,9 @@ export class OnlineGame extends FfaGame {
     const keep = new Set(list.map((r) => r.id));
     for (const f of [...this.match.fighters]) if (!keep.has(f.id)) this.match.removeFighter(f.id);
     for (const r of list) {
-      if (!this.match.byId(r.id)) this.match.addFighter(r.name, r.loadout, r.bot, r.id);
+      const f = this.match.byId(r.id);
+      if (!f) this.match.addFighter(r.name, r.loadout, r.bot, r.id, r.team);
+      else f.team = r.team;
     }
     this.match.events = [];
     const me = this.match.byId(this.myId);
@@ -150,6 +200,8 @@ export class OnlineGame extends FfaGame {
     this.match.time = s.time;
     this.match.over = s.over;
     this.match.winner = s.winner;
+    if (s.ts) { this.match.teamScore[1] = s.ts[0]; this.match.teamScore[2] = s.ts[1]; }
+    if (s.wt !== undefined) this.match.winnerTeam = s.wt;
     for (const sf of s.f) {
       const f = this.match.byId(sf.id);
       if (!f) continue;
@@ -162,6 +214,10 @@ export class OnlineGame extends FfaGame {
       f.protectLeft = sf.pr;
       f.firedAt = sf.fa;
       f.ads = (sf.fl & 8) !== 0;
+      if (sf.lv !== undefined && sf.lv !== f.level) {
+        this.match.applyLevel(f, sf.lv);
+        if (sf.id === this.myId) this.refreshWeapon();
+      }
       if (sf.id === this.myId) {
         // Weapon slot: trust the server unless we just switched (our switch is still on its way).
         if (this.clock - this.lastSlotChange > 0.4 && f.slot !== SLOTS[sf.sl]) { f.slot = SLOTS[sf.sl]!; this.refreshWeapon(); }
@@ -229,7 +285,7 @@ export class OnlineGame extends FfaGame {
   private moveInput(i: FighterInput): MoveInput {
     const me = this.me;
     const w = WEAPON_BY_ID[me.loadout[i.slot ?? me.slot]] ?? this.match.weaponOf(me);
-    return { ...i, wallJump: !!w.wallJump, speedMul: w.moveSpeed * (i.ads && w.zoom > 0 ? 0.75 : 1) };
+    return { ...i, wallJump: !!w.wallJump, speedMul: w.moveSpeed * (i.ads && w.zoom > 0 ? 0.75 : 1) * modeSpeed(this.match.mode) };
   }
 
   protected tick(): void {
@@ -238,7 +294,9 @@ export class OnlineGame extends FfaGame {
     if (this.status !== 'playing' || this.myId < 0 || !this.match.byId(this.myId)) return;
     const me = this.me;
 
-    const slot = this.wantSlot;
+    // Only switch to weapons this mode allows (anything else means "your main gun").
+    const allowed = allowedSlots(this.match.mode, me.level);
+    const slot = this.wantSlot && (allowed.includes(this.wantSlot) ? this.wantSlot : allowed[0]);
     this.wantSlot = undefined;
     const mine: FighterInput = {
       forward: (this.input.held('forward') ? 1 : 0) - (this.input.held('back') ? 1 : 0),
@@ -258,7 +316,10 @@ export class OnlineGame extends FfaGame {
     const seq = ++this.seq;
     this.outbox.push(encodeInput(seq, mine));
     if (this.outbox.length >= INPUTS_PER_MSG) {
-      if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: 'ib', i: this.outbox }));
+      // vd: how far in the past you see everyone (half your ping each way + the smoothing delay), so the
+      // server checks your shots against where people were on your screen.
+      const vd = Math.round((this.ping / 1000 + INTERP_DELAY) * 60);
+      this.send({ t: 'ib', i: this.outbox, vd });
       this.outbox = [];
     }
     this.sentAt.set(seq, this.clock);
@@ -302,6 +363,7 @@ export class OnlineGame extends FfaGame {
 
     for (const f of this.feed) f.age += TICK;
     this.feed = this.feed.filter((f) => f.age < 6).slice(-6);
+    for (const c of this.chatLog) c.age += TICK;
   }
 
   /** Show your shot instantly (sound, recoil, flash); the server decides whether it hit. */

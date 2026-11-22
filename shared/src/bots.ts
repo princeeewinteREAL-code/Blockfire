@@ -105,7 +105,7 @@ export function botThink(match: Match, f: Fighter, brain: BotBrain, dt: number):
   let target: Fighter | null = null;
   let bestD = 70;
   for (const o of match.fighters) {
-    if (o === f || !o.alive) continue;
+    if (!o.alive || !match.enemies(f, o)) continue;
     const d = Math.hypot(o.p.pos.x - f.p.pos.x, o.p.pos.y - f.p.pos.y, o.p.pos.z - f.p.pos.z);
     if (d >= bestD) continue;
     const chest = { x: o.p.pos.x, y: o.p.pos.y + 1.2, z: o.p.pos.z };
@@ -139,7 +139,7 @@ export function botThink(match: Match, f: Fighter, brain: BotBrain, dt: number):
   } else {
     if (!brain.wander || Math.hypot(brain.wander.x - f.p.pos.x, brain.wander.z - f.p.pos.z) < 3) {
       // Head toward a random living enemy's area, or a random spawn.
-      const others = match.fighters.filter((o) => o !== f && o.alive);
+      const others = match.fighters.filter((o) => o.alive && match.enemies(f, o));
       const spawns = match.map.spawns ?? [match.map.spawn];
       if (others.length && r() < 0.6) {
         const o = others[Math.floor(r() * others.length)]!;

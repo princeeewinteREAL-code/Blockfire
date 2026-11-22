@@ -244,3 +244,30 @@ tr.me td { background: rgba(255,90,31,0.25); font-weight: 700; }
 .join-row input { flex: 1 1 160px; text-transform: uppercase; }
 #o-name { width: 100%; letter-spacing: 0; font-size: 17px; }
 .join-row input:focus-visible, #o-name:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+
+/* ---------- Modes, teams, chat ---------- */
+.f-score .team-1 { background: #c8283a; }
+.f-score .team-2 { background: #1f6fd1; }
+.dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border: 2px solid var(--ink); vertical-align: -1px; }
+.chat { position: absolute; left: 22px; bottom: 120px; width: min(420px, 60vw); font: 500 14px var(--body); text-shadow: 1px 1px 0 var(--ink); }
+.chat-log { display: flex; flex-direction: column; gap: 2px; }
+.chat-log div { background: rgba(21,18,31,0.55); padding: 3px 8px; overflow-wrap: anywhere; transition: opacity 400ms; }
+.chat-log b { font-weight: 700; margin-right: 6px; }
+.chat-log i { font-style: normal; color: #cfc8dd; margin-right: 4px; }
+.chat-form { display: flex; gap: 6px; margin-top: 6px; pointer-events: auto; }
+.chat-form span { background: var(--sun); color: var(--ink); text-shadow: none; padding: 6px 8px; font-weight: 700; }
+.chat-form input { flex: 1; min-width: 0; font: 500 15px var(--body); padding: 6px 8px; border: 2px solid var(--ink); background: rgba(255,250,240,0.95); color: var(--ink); }
+.chat-hint { margin: 4px 0 0; font-size: 12px; color: #cfc8dd; }
+.chat.open .chat-log div { opacity: 1 !important; }
+.players { margin-top: 14px; text-align: left; max-height: 40vh; overflow: auto; pointer-events: auto; }
+.players h3 { margin: 6px 0; }
+.players .p { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #2a2540; font: 500 15px var(--body); }
+.players .p span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.players .p button { min-height: 34px; padding: 4px 10px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); font: 700 13px var(--body); cursor: pointer; box-shadow: 2px 2px 0 var(--ink); }
+.players .p button.on { background: var(--sun); }
+.rules { display: grid; gap: 10px; margin: 8px 0 4px; }
+.rules label { display: flex; align-items: center; gap: 12px; font: 500 15px var(--body); }
+.rules label span { min-width: 120px; }
+.rules label.check span { min-width: 0; }
+.rules input[type=number], .rules select, #o-mode { font: 500 15px var(--body); padding: 6px 8px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); }
+.rules input[type=number] { width: 90px; }

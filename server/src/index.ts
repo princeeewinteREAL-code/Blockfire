@@ -12,7 +12,7 @@
 import { createServer } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, TICK_RATE, makeRng, makeRoomCode, type JoinMsg, type ServerMsg } from '@blockfire/shared';
-import { Room, type Connection } from './room.js';
+import { Room, cleanRules, type Connection } from './room.js';
 import { MAX_MSG_BYTES, Session, cleanCode, cleanMap } from './session.js';
 
 const PORT = Number(process.env['PORT'] ?? 8787);
@@ -26,10 +26,11 @@ function newCode(): string {
   return code;
 }
 
-function quickRoom(map: string): Room {
-  const open = [...rooms.values()].filter((r) => r.isPublic && !r.full && r.mapId === map).sort((a, b) => b.humanCount - a.humanCount);
+function quickRoom(map: string, msg: JoinMsg): Room {
+  const rules = cleanRules(msg.game, false);
+  const open = [...rooms.values()].filter((r) => r.isPublic && !r.full && r.mapId === map && r.mode === rules.mode).sort((a, b) => b.humanCount - a.humanCount);
   if (open[0]) return open[0];
-  const room = new Room(newCode(), true, map, Math.floor(rand() * 1e9));
+  const room = new Room(newCode(), true, map, Math.floor(rand() * 1e9), rules);
   rooms.set(room.code, room);
   return room;
 }
@@ -44,11 +45,11 @@ function pickRoom(msg: JoinMsg): Room | string {
   }
   if (msg.mode === 'create') {
     if (rooms.size >= MAX_ROOMS) return 'The server is full right now. Try Quick Play.';
-    const room = new Room(newCode(), false, map, Math.floor(rand() * 1e9));
+    const room = new Room(newCode(), false, map, Math.floor(rand() * 1e9), cleanRules(msg.game, true));
     rooms.set(room.code, room);
     return room;
   }
-  return quickRoom(map);
+  return quickRoom(map, msg);
 }
 
 const http = createServer((req, res) => {

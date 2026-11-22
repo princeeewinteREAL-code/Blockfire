@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
-  MOVEMENT, Match, RARITIES, WEAPON_BY_ID, ballisticsOf, botLoadout, botName, botThink, createBrain, eyeHeight,
+  GUN_LADDER, MODE_BY_ID, MOVEMENT, Match, RARITIES, TEAM_NAMES, WEAPON_BY_ID, ballisticsOf, botLoadout, botName, botThink, createBrain, eyeHeight,
   horizontalSpeed, makeRng, type BotBrain, type BotDifficulty, type Fighter, type FighterInput, type MapDef,
-  type MatchEvent, type RarityId, type Slot, type Vec3, type WeaponDef,
+  type MatchEvent, type ModeId, type RarityId, type Slot, type Vec3, type WeaponDef,
 } from '@blockfire/shared';
 import { buildWorld, type BuiltWorld } from './world.js';
 import type { Input } from './input.js';
@@ -47,8 +47,13 @@ export interface FfaHud {
   callout: string | null;
   protect: number;
   over: boolean;
-  standings: Array<{ id: number; name: string; kills: number; deaths: number; me: boolean; bot: boolean }>;
+  standings: Array<{ id: number; name: string; kills: number; deaths: number; me: boolean; bot: boolean; team: number; level: number }>;
   winner: string | null;
+  mode: ModeId;
+  /** Team Deathmatch: your team (1 Red, 2 Blue) and both scores; null otherwise. */
+  teams: { mine: number; red: number; blue: number; winner: number } | null;
+  /** Gun Game: your level (0-based), how many guns, and the next gun's name. */
+  gun: { level: number; total: number; next: string | null } | null;
 }
 
 /** Pick a skin rarity for a bot weapon, using the crate odds. */
@@ -98,7 +103,7 @@ export class FfaGame {
 
   constructor(
     map: MapDef, protected input: Input, protected sfx: Sfx, protected settings: () => Settings,
-    graphics: Graphics, protected loadout: () => Loadout, difficulty: BotDifficulty, bots = 7,
+    graphics: Graphics, protected loadout: () => Loadout, difficulty: BotDifficulty, bots = 7, mode: ModeId = 'ffa',
   ) {
     this.world = buildWorld(map, graphics.renderer, graphics.shadowSize);
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420);
@@ -108,7 +113,8 @@ export class FfaGame {
     this.effects = new Effects(this.world.scene);
     this.avatars = new Avatars(this.world.scene);
 
-    this.match = new Match(map, { scoreLimit: 30, timeLimit: 360 }, Date.now() & 0xffffff);
+    const def = MODE_BY_ID[mode];
+    this.match = new Match(map, { scoreLimit: def.scoreLimit, timeLimit: def.timeLimit, mode }, Date.now() & 0xffffff);
     const l = loadout();
     this.me = this.match.addFighter('You', { primary: l.primary, secondary: l.secondary, melee: l.melee }, false);
     const nameOffset = Math.floor(this.rand() * 14);
@@ -172,10 +178,10 @@ export class FfaGame {
       const brain = this.brains.get(f.id);
       if (brain) inputs.set(f.id, botThink(this.match, f, brain, TICK));
     }
-    const slotBefore = me.slot;
+    const weaponBefore = this.match.weaponOf(me).id;
     this.match.tick(TICK, inputs);
     this.time += TICK;
-    if (me.slot !== slotBefore) { this.sfx.click(); this.refreshWeapon(); }
+    if (this.match.weaponOf(me).id !== weaponBefore) { this.sfx.click(); this.refreshWeapon(); }
 
     for (const e of this.match.events) this.onEvent(e);
     this.match.events = [];
@@ -306,6 +312,15 @@ export class FfaGame {
           if (e.event === 'climb') this.sfx.climb();
         }
         break;
+      case 'level':
+        if (e.id === meId) {
+          const w = WEAPON_BY_ID[GUN_LADDER[e.level] ?? '']?.name ?? '';
+          this.callout = e.up ? `Gun ${e.level + 1} of ${GUN_LADDER.length}: ${w}` : `Knifed! Back to ${w}`;
+          this.calloutT = 2.2;
+          if (e.up) this.sfx.checkpoint(); else this.sfx.hurt();
+          this.refreshWeapon();
+        }
+        break;
       case 'over':
         this.sfx.finish();
         this.input.unlock();
@@ -423,8 +438,15 @@ export class FfaGame {
       callout: this.callout,
       protect: me.protectLeft,
       over: this.match.over,
-      standings: standings.map((f) => ({ id: f.id, name: f.name, kills: f.kills, deaths: f.deaths, me: f.id === me.id, bot: f.isBot })),
-      winner: this.match.over ? this.match.byId(this.match.winner ?? -1)?.name ?? null : null,
+      standings: standings.map((f) => ({ id: f.id, name: f.name, kills: f.kills, deaths: f.deaths, me: f.id === me.id, bot: f.isBot, team: f.team, level: f.level })),
+      winner: this.match.over
+        ? this.match.teams ? (this.match.winnerTeam ? `${TEAM_NAMES[this.match.winnerTeam]} team` : null) : this.match.byId(this.match.winner ?? -1)?.name ?? null
+        : null,
+      mode: this.match.mode,
+      teams: this.match.teams ? { mine: me.team, red: this.match.teamScore[1]!, blue: this.match.teamScore[2]!, winner: this.match.winnerTeam } : null,
+      gun: this.match.mode === 'gungame'
+        ? { level: me.level, total: GUN_LADDER.length, next: WEAPON_BY_ID[GUN_LADDER[me.level + 1] ?? '']?.name ?? null }
+        : null,
     };
   }
 

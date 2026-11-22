@@ -9,3 +9,5 @@ export * from './bots.js';
 export { NEON_YARD } from './maps/neon-yard.js';
 export { BLOCKTOWN } from './maps/blocktown.js';
 export * from './net.js';
+export * from './modes.js';
+export * from './chat.js';
