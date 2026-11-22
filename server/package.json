@@ -1,0 +1,13 @@
+{
+  "name": "@blockfire/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Game + API server. Built in Phase 3 (multiplayer) and Phase 4 (accounts, economy).",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts"
+  },
+  "dependencies": {
+    "@blockfire/shared": "*"
+  }
+}

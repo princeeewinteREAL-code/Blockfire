@@ -1,0 +1,26 @@
+{
+  "name": "blockfire",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Blockfire — a fast, blocky, browser-based shooter with sliding, strafing and parkour.",
+  "workspaces": [
+    "shared",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "preview": "npm run preview -w client",
+    "test": "vitest run",
+    "typecheck": "tsc -p shared && tsc -p client --noEmit && tsc -p server --noEmit",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
