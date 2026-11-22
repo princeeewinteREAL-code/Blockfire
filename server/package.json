@@ -5,9 +5,15 @@
   "type": "module",
   "description": "Game + API server. Built in Phase 3 (multiplayer) and Phase 4 (accounts, economy).",
   "scripts": {
-    "start": "node --experimental-strip-types src/index.ts"
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.mjs --external:ws --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "start": "node dist/server.mjs"
   },
   "dependencies": {
-    "@blockfire/shared": "*"
+    "@blockfire/shared": "*",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/ws": "^8.18.2"
   }
 }

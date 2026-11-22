@@ -105,8 +105,9 @@ export class Match {
     this.rand = makeRng(seed);
   }
 
-  addFighter(name: string, loadout: Loadout3, isBot: boolean): Fighter {
-    const id = this.nextId++;
+  addFighter(name: string, loadout: Loadout3, isBot: boolean, fixedId?: number): Fighter {
+    const id = fixedId ?? this.nextId++;
+    if (fixedId !== undefined) this.nextId = Math.max(this.nextId, fixedId + 1);
     const f: Fighter = {
       id, name, isBot,
       p: createPlayer({ x: 0, y: 0, z: 0 }),
@@ -123,6 +124,13 @@ export class Match {
     this.fighters.push(f);
     this.spawn(f);
     return f;
+  }
+
+  /** Take a player out of the match (they left). */
+  removeFighter(id: number): void {
+    const i = this.fighters.findIndex((f) => f.id === id);
+    if (i >= 0) this.fighters.splice(i, 1);
+    for (let j = this.projectiles.length - 1; j >= 0; j--) if (this.projectiles[j]!.owner === id) this.projectiles.splice(j, 1);
   }
 
   byId(id: number): Fighter | undefined {
