@@ -5,13 +5,16 @@ import WebSocket from 'ws';
 import { PROTOCOL, encodeInput, idleInput, type ServerMsg, type SnapMsg } from '@blockfire/shared';
 
 const PORT = 18787;
-let proc: ChildProcess;
+/** Set BF_URL (e.g. http://localhost:8787 under `wrangler dev`) to test another server instead of the Node one. */
+const BASE = process.env['BF_URL'] ?? `http://localhost:${PORT}`;
+let proc: ChildProcess | undefined;
 
 beforeAll(async () => {
+  if (process.env['BF_URL']) return;
   proc = spawn('node', [resolve(__dirname, '../dist/server.mjs')], { env: { ...process.env, PORT: String(PORT) }, stdio: 'pipe' });
   await new Promise<void>((ok, fail) => {
     const timer = setTimeout(() => fail(new Error('server did not start (run npm run build:server first)')), 8000);
-    proc.stdout!.on('data', (d) => { if (String(d).includes('listening')) { clearTimeout(timer); ok(); } });
+    proc!.stdout!.on('data', (d) => { if (String(d).includes('listening')) { clearTimeout(timer); ok(); } });
   });
 });
 
@@ -19,9 +22,10 @@ afterAll(() => { proc?.kill(); });
 
 interface Client { ws: WebSocket; msgs: ServerMsg[]; next: (t: ServerMsg['t'], ms?: number) => Promise<ServerMsg> }
 
-function connect(): Promise<Client> {
+function connect(mode: 'quick' | 'create' | 'join', code?: string): Promise<Client> {
   return new Promise((ok) => {
-    const ws = new WebSocket(`ws://localhost:${PORT}`);
+    const q = new URLSearchParams({ mode, map: 'blocktown', ...(code ? { code } : {}) });
+    const ws = new WebSocket(`${BASE.replace(/^http/, 'ws')}/ws?${q}`);
     const msgs: ServerMsg[] = [];
     ws.on('message', (d) => msgs.push(JSON.parse(String(d)) as ServerMsg));
     const next = async (t: ServerMsg['t'], ms = 3000) => {
@@ -37,19 +41,21 @@ function connect(): Promise<Client> {
   });
 }
 
-const join = (c: Client, mode: 'quick' | 'create' | 'join', code?: string, name = 'Tester') =>
+async function enter(mode: 'quick' | 'create' | 'join', code?: string, name = 'Tester'): Promise<Client> {
+  const c = await connect(mode, code);
   c.ws.send(JSON.stringify({ t: 'join', v: PROTOCOL, name, loadout: { primary: 'assault_rifle', secondary: 'pistol', melee: 'combat_knife' }, rarity: {}, mode, code, map: 'blocktown' }));
+  return c;
+}
 
 describe('game server', () => {
   it('answers the health check', async () => {
-    const r = await fetch(`http://localhost:${PORT}/health`);
+    const r = await fetch(`${BASE}/health`);
     const body = await r.json() as { ok: boolean };
     expect(body.ok).toBe(true);
   });
 
   it('a player joins a room, gets 7 bots and 20 snapshots a second', async () => {
-    const a = await connect();
-    join(a, 'quick');
+    const a = await enter('quick');
     const welcome = await a.next('welcome') as Extract<ServerMsg, { t: 'welcome' }>;
     expect(welcome.code).toMatch(/^[A-Z0-9]{6}$/);
     const roster = await a.next('roster') as Extract<ServerMsg, { t: 'roster' }>;
@@ -64,13 +70,14 @@ describe('game server', () => {
   });
 
   it('the server moves you with your inputs and acknowledges them', async () => {
-    const a = await connect();
-    join(a, 'create');
+    const a = await enter('create');
     const w = await a.next('welcome') as Extract<ServerMsg, { t: 'welcome' }>;
     await a.next('snap');
     const start = (await a.next('snap') as SnapMsg).me!.pos;
+    // Like the real game: two ticks of input per message, 30 messages a second.
     let seq = 0;
-    const timer = setInterval(() => { a.ws.send(JSON.stringify(encodeInput(++seq, { ...idleInput(), forward: 1, yaw: 0 }))); }, 1000 / 60);
+    const one = () => encodeInput(++seq, { ...idleInput(), forward: 1, yaw: 0 });
+    const timer = setInterval(() => { a.ws.send(JSON.stringify({ t: 'ib', i: [one(), one()] })); }, 1000 / 30);
     await new Promise((r) => setTimeout(r, 1200));
     clearInterval(timer);
     await new Promise((r) => setTimeout(r, 200));
@@ -84,12 +91,10 @@ describe('game server', () => {
   });
 
   it('a friend can join your private room with its code, replacing a bot', async () => {
-    const a = await connect();
-    join(a, 'create', undefined, 'Host');
+    const a = await enter('create', undefined, 'Host');
     const w = await a.next('welcome') as Extract<ServerMsg, { t: 'welcome' }>;
     await a.next('roster');
-    const b = await connect();
-    join(b, 'join', w.code, 'Friend');
+    const b = await enter('join', w.code, 'Friend');
     const wb = await b.next('welcome') as Extract<ServerMsg, { t: 'welcome' }>;
     expect(wb.code).toBe(w.code);
     const roster = await a.next('roster') as Extract<ServerMsg, { t: 'roster' }>;
@@ -104,8 +109,7 @@ describe('game server', () => {
   });
 
   it('rejects a wrong room code', async () => {
-    const a = await connect();
-    join(a, 'join', 'ZZZZZZ');
+    const a = await enter('join', 'ZZZZZZ');
     const e = await a.next('error') as Extract<ServerMsg, { t: 'error' }>;
     expect(e.message).toMatch(/No room/);
     a.ws.close();
@@ -114,8 +118,7 @@ describe('game server', () => {
 
 describe('game server: lag safety', () => {
   it('a player whose inputs stop (frozen tab) stops moving within a fraction of a second', async () => {
-    const a = await connect();
-    join(a, 'create');
+    const a = await enter('create');
     await a.next('welcome');
     await a.next('snap');
     let seq = 0;

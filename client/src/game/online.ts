@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
-  BLOCKTOWN, NEON_YARD, PROTOCOL, SLOTS, WEAPON_BY_ID, encodeInput, stepPlayer,
+  BLOCKTOWN, INPUTS_PER_MSG, NEON_YARD, PROTOCOL, SLOTS, WEAPON_BY_ID, encodeInput, stepPlayer,
   type FighterInput, type MapDef, type MatchEvent, type MoveInput, type PlayerState, type RarityId, type RosterEntry,
-  type ServerMsg, type SnapMsg, type JoinMode, type Slot,
+  type InputMsg, type ServerMsg, type SnapMsg, type JoinMode, type Slot,
 } from '@blockfire/shared';
 import { FfaGame, TICK } from './ffa.js';
 import type { Input } from './input.js';
@@ -11,13 +11,30 @@ import type { Graphics } from './graphics.js';
 import { rarityOf, type Loadout } from './loadout.js';
 import type { Settings } from './settings.js';
 
-/** Where the game server lives. Set VITE_SERVER_URL when building, e.g. wss://blockfire.duckdns.org */
+/**
+ * Where the game server lives. On the real site (Cloudflare) the server is the same Worker that
+ * serves the page, so nothing needs setting. Overrides: ?server=wss://… in the address bar, or
+ * VITE_SERVER_URL when building (for a separate server such as the Docker one).
+ */
 export function serverUrl(): string {
   const fromQuery = new URLSearchParams(location.search).get('server');
   if (fromQuery) return fromQuery;
   const fromBuild = (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? '';
   if (fromBuild) return fromBuild;
-  return location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'ws://localhost:8787' : '';
+  const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  // `npm run dev` / `npm run preview` serve only the page: the server runs separately on 8787.
+  if (local && (location.port === '5173' || location.port === '4173')) return 'ws://localhost:8787';
+  if (location.protocol === 'https:') return `wss://${location.host}`;
+  if (location.protocol === 'http:') return `ws://${location.host}`;
+  return '';
+}
+
+/** The full WebSocket address for joining: the Cloudflare server routes on these query values. */
+export function joinUrl(base: string, mode: JoinMode, code: string, map: string): string {
+  const root = base.replace(/\/+$/, '').replace(/\/ws$/, '');
+  const q = new URLSearchParams({ mode, map });
+  if (mode === 'join') q.set('code', code);
+  return `${root}/ws?${q}`;
 }
 
 export type NetStatus = 'connecting' | 'playing' | 'error' | 'closed';
@@ -42,6 +59,8 @@ export class OnlineGame extends FfaGame {
   private seq = 0;
   private pending: Array<{ seq: number; input: FighterInput }> = [];
   private sentAt = new Map<number, number>();
+  /** Inputs waiting to go out; they're sent INPUTS_PER_MSG at a time. */
+  private outbox: InputMsg[] = [];
   private samples = new Map<number, Sample[]>();
   private roster = new Map<number, RosterEntry>();
   private correction = new THREE.Vector3();
@@ -58,7 +77,7 @@ export class OnlineGame extends FfaGame {
     this.ownShotsPredicted = true;
     // Until the server says who's who, nobody is in the match.
     this.match.fighters.length = 0;
-    this.ws = new WebSocket(url);
+    this.ws = new WebSocket(joinUrl(url, mode, code, map.id));
     this.ws.onopen = () => {
       const l = loadout();
       const rarity: Record<string, RarityId> = {};
@@ -237,7 +256,11 @@ export class OnlineGame extends FfaGame {
       slot: slot as Slot | undefined,
     };
     const seq = ++this.seq;
-    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(encodeInput(seq, mine)));
+    this.outbox.push(encodeInput(seq, mine));
+    if (this.outbox.length >= INPUTS_PER_MSG) {
+      if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: 'ib', i: this.outbox }));
+      this.outbox = [];
+    }
     this.sentAt.set(seq, this.clock);
 
     if (slot && slot !== me.slot) {
