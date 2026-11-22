@@ -41,7 +41,13 @@ describe('running', () => {
   it('weapon speed multiplier scales run speed (125% Super Pistols)', () => {
     const p = grounded();
     run(p, { forward: 1, speedMul: 1.25 }, 120);
-    expect(horizontalSpeed(p)).toBeCloseTo(7.5, 1);
+    expect(horizontalSpeed(p)).toBeCloseTo(MOVEMENT.runSpeed * 1.25, 1);
+  });
+
+  it('W + D (strafe sprint) is faster than W alone, like Krunker', () => {
+    const p = grounded();
+    run(p, { forward: 1, strafe: 1 }, 120);
+    expect(horizontalSpeed(p)).toBeCloseTo(MOVEMENT.runSpeed * MOVEMENT.diagonalBoost, 1);
   });
 
   it('stops quickly when keys are released', () => {
@@ -66,32 +72,33 @@ describe('jumping', () => {
     expect(p.onGround).toBe(true);
   });
 
-  it('auto bunny-hops while jump is held, keeping speed', () => {
+  it('holding jump bunny-hops and builds speed, up to the hop cap', () => {
     const p = grounded();
     run(p, { forward: 1 }, 120);
-    const events = run(p, { forward: 1, jump: true }, 180);
-    expect(events.filter((e) => e === 'jump').length).toBeGreaterThanOrEqual(4);
-    expect(horizontalSpeed(p)).toBeGreaterThanOrEqual(5.9);
+    const events = run(p, { forward: 1, jump: true }, 60 * 8);
+    expect(events.filter((e) => e === 'jump').length).toBeGreaterThanOrEqual(10);
+    expect(horizontalSpeed(p)).toBeGreaterThan(MOVEMENT.runSpeed * 1.25);
+    expect(horizontalSpeed(p)).toBeLessThanOrEqual(MOVEMENT.runSpeed * MOVEMENT.hopCap + 0.01);
   });
 });
 
 describe('sliding', () => {
-  it('gives a 1.5x speed boost', () => {
+  it('gives a speed boost', () => {
     const p = grounded();
     run(p, { forward: 1 }, 120);
     const events = run(p, { forward: 1, crouch: true }, 1);
     expect(events).toContain('slide');
-    expect(horizontalSpeed(p)).toBeGreaterThan(MOVEMENT.runSpeed * 1.45);
+    expect(horizontalSpeed(p)).toBeGreaterThan(MOVEMENT.runSpeed * 1.4);
   });
 
-  it('ends after about 0.8 s and then has a 1 s cooldown', () => {
+  it('runs out after about 0.9 s and then has a short cooldown', () => {
     const p = grounded();
     run(p, { forward: 1 }, 120);
     run(p, { forward: 1, crouch: true }, 1);
     expect(p.sliding).toBe(true);
-    run(p, { forward: 1, crouch: true }, 50);
+    run(p, { forward: 1, crouch: true }, 60);
     expect(p.sliding).toBe(false);
-    expect(p.slideCooldown).toBeGreaterThan(0.8);
+    expect(p.slideCooldown).toBeGreaterThan(0.2);
     // Pressing crouch again during the cooldown doesn't slide.
     const again = run(p, { forward: 1 }, 1).concat(run(p, { forward: 1, crouch: true }, 1));
     expect(again).not.toContain('slide');
@@ -104,6 +111,47 @@ describe('sliding', () => {
     const events = run(p, { forward: 1, jump: true }, 1);
     expect(events).toContain('slideHop');
     expect(horizontalSpeed(p)).toBeGreaterThan(8);
+  });
+
+  it('chained slide-hops build speed well past run speed (the Krunker way to move)', () => {
+    const p = grounded();
+    run(p, { forward: 1 }, 120);
+    // Hold W + Space + Shift: land straight into a slide, hop out of it, repeat.
+    run(p, { forward: 1, jump: true, crouch: true }, 60 * 6);
+    expect(horizontalSpeed(p)).toBeGreaterThan(12);
+    expect(horizontalSpeed(p)).toBeLessThanOrEqual(MOVEMENT.maxSpeed + 1e-6);
+  });
+
+  it('a crouch pressed just before landing still triggers a chained slide', () => {
+    const p = grounded();
+    run(p, { forward: 1 }, 120);
+    run(p, { forward: 1, jump: true }, 1);
+    const events: string[] = [];
+    for (let i = 0; i < 60 && events.indexOf('slideChain') < 0; i++) {
+      const crouch = !p.onGround && p.vel.y < -6; // tap Shift on the way down
+      events.push(...stepPlayer(p, { ...emptyInput(), forward: 1, crouch }, FLAT, DT).events);
+    }
+    expect(events).toContain('slideChain');
+  });
+
+  it('slides follow the mouse', () => {
+    const p = grounded();
+    run(p, { forward: 1 }, 120);
+    run(p, { forward: 1, crouch: true }, 1);
+    // Turn 45° right during the slide: the slide should bend most of the way.
+    run(p, { forward: 1, crouch: true, yaw: -Math.PI / 4 }, 20);
+    const angle = Math.atan2(-p.vel.x, -p.vel.z);
+    expect(angle).toBeLessThan(-0.5);
+  });
+
+  it('holding W in the air curves the jump toward where you look, without slowing down', () => {
+    const p = grounded();
+    run(p, { forward: 1 }, 120);
+    run(p, { forward: 1, jump: true }, 1);
+    const before = horizontalSpeed(p);
+    run(p, { forward: 1, yaw: -0.6 }, 25);
+    expect(Math.atan2(-p.vel.x, -p.vel.z)).toBeLessThan(-0.3);
+    expect(horizontalSpeed(p)).toBeGreaterThan(before - 0.2);
   });
 
   it('shrinks the hitbox while sliding', () => {
@@ -203,8 +251,9 @@ describe('Training Grounds map', () => {
   it('lets you walk up the slide-tower ramp', () => {
     const p = createPlayer({ x: 13, y: 0.1, z: -11 });
     run(p, {}, 10, TEST_MAP);
-    run(p, { forward: 1 }, 300, TEST_MAP); // yaw 0 = toward -Z = up the ramp
-    expect(p.pos.y).toBeGreaterThan(5);
+    let peak = 0;
+    for (let i = 0; i < 300; i++) { run(p, { forward: 1 }, 1, TEST_MAP); peak = Math.max(peak, p.pos.y); } // yaw 0 = toward -Z = up the ramp
+    expect(peak).toBeGreaterThan(5.5);
   });
 
   it('sliding down the ramp is faster than running', () => {

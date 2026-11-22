@@ -91,6 +91,7 @@ export class FfaGame {
   private callout: string | null = null;
   private calloutT = 0;
   private stepClock = 0;
+  private shotCount = 0;
   private rand = makeRng(Date.now() & 0xffff);
 
   constructor(
@@ -215,9 +216,12 @@ export class FfaGame {
           from = this.v(e.from).add(aim.multiplyScalar(0.7)).add(new THREE.Vector3(0, -0.3, 0));
           this.sfx.shot(e.weapon, this.where(e.from));
         }
-        this.effects.tracer(from, this.v(e.to), color, w.id === 'sniper' || w.id === 'hand_cannon' ? 0.05 : 0.025);
-        this.effects.muzzle(from, color);
-        if (!e.hit) this.effects.sparks(this.v(e.to), new THREE.Color('#ffd9a0'), 3, 3, 0.04);
+        // Fast-firing guns only show every third tracer, so the screen doesn't fill with lines.
+        const auto = w.rpm >= 400;
+        this.shotCount = (this.shotCount + 1) % 3;
+        if (!auto || this.shotCount === 0) this.effects.tracer(from, this.v(e.to), color, w.id === 'sniper' || w.id === 'hand_cannon' ? 0.022 : 0.012);
+        if (e.shooter === meId) this.effects.muzzle(from);
+        if (!e.hit && (!auto || this.shotCount === 0)) this.effects.sparks(this.v(e.to), new THREE.Color('#d8c8a0'), 2, 2, 0.03);
         break;
       }
       case 'hit': {
@@ -227,7 +231,7 @@ export class FfaGame {
           this.sfx.hitmarker(e.head);
         }
         if (e.victim === meId) { this.hurt = Math.min(1, this.hurt + e.damage / 60); this.sfx.hurt(); }
-        this.effects.sparks(this.v(e.at), new THREE.Color(e.head ? '#ff4b4b' : '#ffffff'), e.head ? 10 : 6, 4, 0.05);
+        if (e.head) this.effects.sparks(this.v(e.at), new THREE.Color('#ff6b6b'), 4, 3, 0.04);
         break;
       }
       case 'kill': {
@@ -257,11 +261,11 @@ export class FfaGame {
         const w = this.where(e.pos);
         this.sfx.explosion(e.weapon === 'k2_bomber', w);
         const d = this.camera.position.distanceTo(this.v(e.pos));
-        this.effects.shake = Math.max(this.effects.shake, Math.max(0, 1 - d / (e.radius * 4)) * (e.weapon === 'k2_bomber' ? 1.4 : 0.7));
+        this.effects.shake = Math.max(this.effects.shake, Math.max(0, 1 - d / (e.radius * 4)) * (e.weapon === 'k2_bomber' ? 0.6 : 0.25));
         break;
       }
       case 'impact':
-        this.effects.sparks(this.v(e.pos), new THREE.Color('#ffd9a0'), 6, 4, 0.05);
+        this.effects.sparks(this.v(e.pos), new THREE.Color('#ffd9a0'), 3, 3, 0.04);
         this.sfx.impact(this.where(e.pos));
         break;
       case 'swing': {
@@ -292,7 +296,8 @@ export class FfaGame {
         if (e.id === meId) {
           if (e.event === 'jump') this.sfx.jump();
           if (e.event === 'land') { this.sfx.land(); this.viewmodel.land(); }
-          if (e.event === 'slide') this.sfx.slide();
+          if (e.event === 'slide' || e.event === 'slideChain') this.sfx.slide();
+          if (e.event === 'slideHop') this.sfx.slideHop();
           if (e.event === 'wallJump') this.sfx.wallJump();
           if (e.event === 'climb') this.sfx.climb();
         }

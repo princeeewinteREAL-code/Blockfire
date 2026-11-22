@@ -26,6 +26,10 @@ export interface PlayerState {
   crouchHeld: boolean;
   /** Landed on the previous tick (lets you slide straight out of a landing). */
   justLanded: boolean;
+  /** Seconds left on a crouch pressed in the air (buffered for a slide-hop). */
+  crouchQueue: number;
+  /** Consecutive bunny hops (for the HUD and effects). */
+  hops: number;
   /** The ramp you're standing on, if any (index into map.ramps). */
   groundRamp: number;
 }
@@ -46,7 +50,7 @@ export interface MoveInput {
   speedMul: number;
 }
 
-export type MoveEvent = 'jump' | 'land' | 'slide' | 'slideHop' | 'wallJump' | 'climb' | 'step';
+export type MoveEvent = 'jump' | 'land' | 'slide' | 'slideChain' | 'slideHop' | 'wallJump' | 'climb' | 'step';
 
 export interface StepResult { events: MoveEvent[] }
 
@@ -64,6 +68,8 @@ export function createPlayer(pos: Vec3, cfg: MovementConfig = MOVEMENT): PlayerS
     jumpHeld: false,
     crouchHeld: false,
     justLanded: false,
+    crouchQueue: 0,
+    hops: 0,
     groundRamp: -1,
   };
 }
@@ -109,6 +115,22 @@ function accelerate(v: Vec3, dirX: number, dirZ: number, wishSpeed: number, acce
   const amount = Math.min(accel * dt * wishSpeed, add);
   v.x += amount * dirX;
   v.z += amount * dirZ;
+}
+
+/** Rotate horizontal velocity toward a direction by at most `maxAngle` radians, keeping its speed. */
+function turnToward(v: Vec3, dirX: number, dirZ: number, maxAngle: number): void {
+  const speed = Math.hypot(v.x, v.z);
+  if (speed < 0.5) return;
+  const cur = Math.atan2(v.z, v.x);
+  const want = Math.atan2(dirZ, dirX);
+  let d = want - cur;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  // Don't flip around when you look backwards.
+  if (Math.abs(d) > Math.PI * 0.6) return;
+  const a = cur + Math.max(-maxAngle, Math.min(maxAngle, d));
+  v.x = Math.cos(a) * speed;
+  v.z = Math.sin(a) * speed;
 }
 
 function applyFriction(v: Vec3, friction: number, stopSpeed: number, dt: number): void {
@@ -238,7 +260,7 @@ export function stepPlayer(
   p.slideCooldown = Math.max(0, p.slideCooldown - dt);
   p.climbCooldown = Math.max(0, p.climbCooldown - dt);
 
-  // Wish direction from keys + camera yaw.
+  // Wish direction from keys + camera yaw. W+A / W+D is faster (Krunker's "strafe sprint").
   const sin = Math.sin(input.yaw);
   const cos = Math.cos(input.yaw);
   let wx = -sin * input.forward + cos * input.strafe;
@@ -246,33 +268,57 @@ export function stepPlayer(
   const wlen = Math.hypot(wx, wz);
   if (wlen > 1e-6) { wx /= wlen; wz /= wlen; } else { wx = 0; wz = 0; }
   const hasWish = wlen > 1e-6;
+  const diag = input.forward !== 0 && input.strafe !== 0 ? cfg.diagonalBoost : 1;
+  const faceX = -sin;
+  const faceZ = -cos;
+
+  // Crouch pressed in the air is remembered briefly, so you can slide the moment you land.
+  if (!p.onGround && crouchPressed) p.crouchQueue = cfg.crouchBuffer;
+  p.crouchQueue = Math.max(0, p.crouchQueue - dt);
 
   // --- Start a slide ---
   const speed = horizontalSpeed(p);
+  const landingSlide = p.justLanded && (input.crouch || p.crouchQueue > 0);
   if (
-    p.onGround && !p.sliding && p.slideCooldown <= 0 &&
-    (crouchPressed || (p.justLanded && input.crouch)) && speed >= cfg.slideMinSpeed
+    p.onGround && !p.sliding && speed >= cfg.slideMinSpeed &&
+    (landingSlide || (crouchPressed && p.slideCooldown <= 0))
   ) {
-    const target = Math.max(speed, cfg.runSpeed * input.speedMul * cfg.slideBoost);
-    p.vel.x = (p.vel.x / speed) * target;
-    p.vel.z = (p.vel.z / speed) * target;
+    const base = cfg.runSpeed * input.speedMul * cfg.slideBoost;
+    // Chaining (landing straight into a slide) builds speed; a fresh slide gives the base boost.
+    const target = Math.min(cfg.maxSpeed, landingSlide ? Math.max(speed * cfg.slideChainGain, base) : Math.max(speed, base));
+    // Slides go where you're looking (unless you're moving backwards).
+    const vx = p.vel.x / speed, vz = p.vel.z / speed;
+    const useFace = vx * faceX + vz * faceZ > 0;
+    p.vel.x = (useFace ? faceX : vx) * target;
+    p.vel.z = (useFace ? faceZ : vz) * target;
     p.sliding = true;
     p.slideTime = cfg.slideDuration;
-    events.push('slide');
+    p.crouchQueue = 0;
+    events.push(landingSlide ? 'slideChain' : 'slide');
   }
 
-  // --- Jumping (auto bunny-hop while held) and wall-jumps ---
+  // --- Jumping (hold to bunny-hop) and wall-jumps ---
   if (p.onGround && input.jump) {
-    // Jumping skips friction (that's what makes bunny-hopping keep speed), but you still
-    // get one tick of ground acceleration so hopping from a standstill gets you moving.
-    if (hasWish && !p.sliding) {
-      const base = input.walk ? cfg.walkSpeed : cfg.runSpeed;
-      accelerate(p.vel, wx, wz, base * input.speedMul, cfg.groundAccel, dt);
-    }
     if (p.sliding) {
+      // Slide-hop: keep the slide speed (no cooldown, so you can chain them).
       p.sliding = false;
-      p.slideCooldown = cfg.slideCooldown;
       events.push('slideHop');
+    } else {
+      if (hasWish) {
+        const base = input.walk ? cfg.walkSpeed : cfg.runSpeed;
+        accelerate(p.vel, wx, wz, base * input.speedMul * diag, cfg.groundAccel, dt);
+      }
+      // Bunny hop: jumping the instant you land builds a little speed.
+      const hs0 = horizontalSpeed(p);
+      const cap = cfg.runSpeed * input.speedMul * cfg.hopCap;
+      if (p.justLanded && hs0 > cfg.runSpeed * input.speedMul * 0.8 && hs0 < cap) {
+        const k = Math.min(cfg.hopGain, cap / hs0);
+        p.vel.x *= k;
+        p.vel.z *= k;
+        p.hops += 1;
+      } else if (!p.justLanded) {
+        p.hops = 0;
+      }
     }
     p.vel.y = launchSpeed(cfg.jumpHeight, cfg.gravity);
     p.onGround = false;
@@ -291,6 +337,8 @@ export function stepPlayer(
       p.wallJumpsLeft -= 1;
       events.push('wallJump');
     }
+  } else if (p.onGround && !p.justLanded) {
+    p.hops = 0;
   }
 
   // --- Accelerate ---
@@ -302,8 +350,8 @@ export function stepPlayer(
         p.vel.x += down.x * cfg.gravity * down.sin * dt;
         p.vel.z += down.z * cfg.gravity * down.sin * dt;
       }
-      // A little steering while sliding.
-      if (hasWish) accelerate(p.vel, wx, wz, cfg.crouchSpeed * input.speedMul, 2, dt);
+      // Steer the slide with the mouse.
+      turnToward(p.vel, faceX, faceZ, cfg.slideTurn * dt);
       p.slideTime -= dt;
       if (p.slideTime <= 0 || horizontalSpeed(p) < cfg.crouchSpeed) {
         p.sliding = false;
@@ -312,12 +360,14 @@ export function stepPlayer(
     } else {
       applyFriction(p.vel, cfg.friction, cfg.stopSpeed, dt);
       const base = input.crouch ? cfg.crouchSpeed : input.walk ? cfg.walkSpeed : cfg.runSpeed;
-      if (hasWish) accelerate(p.vel, wx, wz, base * input.speedMul, cfg.groundAccel, dt);
+      if (hasWish) accelerate(p.vel, wx, wz, base * input.speedMul * diag, cfg.groundAccel, dt);
     }
   } else {
     if (hasWish) {
       const wish = cfg.runSpeed * input.speedMul;
       accelerate(p.vel, wx, wz, Math.min(wish, cfg.airWishCap), cfg.airAccel, dt);
+      // Air control: holding forward bends your momentum toward where you look, without losing speed.
+      if (input.forward > 0) turnToward(p.vel, wx, wz, cfg.airTurn * dt);
     }
     p.vel.y -= cfg.gravity * dt;
   }

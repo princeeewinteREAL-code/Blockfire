@@ -33,9 +33,26 @@ export class Viewmodel {
   private dipVel = 0;
   private time = 0;
   private hip = new THREE.Vector3();
+  private arms = new THREE.Group();
+  private armR: THREE.Mesh;
+  private armL: THREE.Mesh;
 
   constructor(camera: THREE.Camera) {
     camera.add(this.hand);
+    // Blocky arms: a sleeve with a skin-coloured hand, like a Minecraft arm.
+    const sleeve = new THREE.MeshStandardMaterial({ color: '#2f80ed', roughness: 0.85 });
+    const skin = new THREE.MeshStandardMaterial({ color: '#e0a882', roughness: 0.8 });
+    const makeArm = () => {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.42), sleeve);
+      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.1), skin);
+      hand.position.z = -0.24;
+      arm.add(hand);
+      return arm;
+    };
+    this.armR = makeArm();
+    this.armL = makeArm();
+    this.arms.add(this.armR, this.armL);
+    this.hand.add(this.arms);
     const fill = new THREE.PointLight(0xffffff, 0.12, 1.2);
     fill.position.set(0.1, 0.1, 0);
     camera.add(fill);
@@ -48,22 +65,41 @@ export class Viewmodel {
     this.key = key;
     this.weapon = w;
     if (this.model) this.hand.remove(this.model.group);
-    const model = buildWeaponModel(w.id, rarity);
-    const len = Math.max(model.size.z, model.size.x * 0.6);
-    const s = THREE.MathUtils.clamp(42 / len, 0.45, 0.8) * 0.01 * (w.slot === 'melee' ? 0.7 : 1);
+    // Held weapons glow far less than in the Armory, so they never cover the screen.
+    const model = buildWeaponModel(w.id, rarity, 0.2);
+    // Size each weapon by its type, Krunker-style: long guns ~48 cm, pistols ~24 cm.
+    const dual = w.id === 'super_pistols' || w.id === 'dual_heavy_mgs';
+    const targetLen = w.slot === 'melee' ? 0.3 : w.slot === 'secondary' ? 0.24 : dual ? 0.34 : 0.48;
+    const len = Math.max(model.size.z, 1);
+    const s = Math.min(0.012, targetLen / len);
     model.group.scale.setScalar(s);
     model.group.traverse((o) => { o.castShadow = false; });
-    const dual = w.id === 'super_pistols' || w.id === 'dual_heavy_mgs';
     if (w.slot === 'melee') {
-      model.group.rotation.set(0.75, 0.35, 0.35);
-      this.hip.set(0.2, -0.2, -0.28);
+      model.group.rotation.set(0.55, 0.3, 0.25);
+      this.hip.set(0.2, -0.19, -0.3);
     } else {
-      model.group.rotation.set(0, -0.04, 0);
-      this.hip.set(dual ? 0 : 0.16, -0.15, -0.26 - model.center.z * s);
+      // Grip sits low on the right; the barrel points slightly in toward the crosshair.
+      model.group.rotation.set(0.02, 0.035, 0);
+      this.hip.set(dual ? 0 : 0.13, -0.14, -0.2 - model.center.z * s * 0.35);
     }
     model.group.position.copy(this.hip);
     this.hand.add(model.group);
     this.model = model;
+
+    // Arms: right hand on the grip, left hand on the front of long guns.
+    const grip = this.hip.clone().add(new THREE.Vector3(0, -0.04, 0.05));
+    this.armR.position.copy(grip).add(new THREE.Vector3(0.05, -0.08, 0.2));
+    this.armR.rotation.set(0.35, 0.18, 0);
+    const twoHanded = w.slot === 'primary' && !dual;
+    this.armL.visible = twoHanded || dual;
+    if (dual) {
+      this.armL.position.set(-this.armR.position.x, this.armR.position.y, this.armR.position.z);
+      this.armL.rotation.set(0.35, -0.18, 0);
+    } else {
+      const front = this.hip.clone().add(new THREE.Vector3(-0.01, -0.06, (model.center.z - model.size.z * 0.15) * s));
+      this.armL.position.copy(front).add(new THREE.Vector3(-0.16, -0.1, 0.16));
+      this.armL.rotation.set(0.4, -0.75, 0);
+    }
     if (swapping) this.swap = 1;
   }
 
@@ -115,8 +151,9 @@ export class Viewmodel {
 
     // Aim down sights: slide the gun to the middle of the screen.
     if (this.model && this.weapon && this.weapon.slot !== 'melee') {
-      const target = new THREE.Vector3(0, -0.1, this.hip.z + 0.06);
+      const target = new THREE.Vector3(0, -0.135, this.hip.z + 0.02);
       this.model.group.position.lerpVectors(this.hip, target, adsK);
+      this.arms.position.set(-this.hip.x * adsK, (-0.135 - this.hip.y) * adsK, 0.02 * adsK);
       // A scoped sniper disappears behind the scope overlay.
       this.model.group.visible = !(this.weapon.zoom >= 2 && s.ads > 0.9);
     }

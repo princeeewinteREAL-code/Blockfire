@@ -20,13 +20,17 @@ interface Skill {
   slide: boolean;
   hop: boolean;
   headshots: number;
+  /** Bots fire in bursts of this many seconds… */
+  burst: number;
+  /** …then pause this long (lower levels pause longer). */
+  rest: number;
 }
 
 export const BOT_SKILL: Record<BotDifficulty, Skill> = {
-  easy: { turn: 2.2, error: 0.11, reaction: 0.65, strafe: false, slide: false, hop: false, headshots: 0 },
-  normal: { turn: 4, error: 0.055, reaction: 0.38, strafe: true, slide: false, hop: false, headshots: 0.1 },
-  hard: { turn: 7, error: 0.028, reaction: 0.22, strafe: true, slide: true, hop: true, headshots: 0.3 },
-  insane: { turn: 12, error: 0.012, reaction: 0.12, strafe: true, slide: true, hop: true, headshots: 0.55 },
+  easy: { turn: 1.5, error: 0.17, reaction: 1.0, strafe: false, slide: false, hop: false, headshots: 0, burst: 0.5, rest: 0.9 },
+  normal: { turn: 2.6, error: 0.1, reaction: 0.65, strafe: true, slide: false, hop: false, headshots: 0.05, burst: 0.8, rest: 0.6 },
+  hard: { turn: 5, error: 0.05, reaction: 0.32, strafe: true, slide: true, hop: true, headshots: 0.25, burst: 1.4, rest: 0.3 },
+  insane: { turn: 10, error: 0.02, reaction: 0.15, strafe: true, slide: true, hop: true, headshots: 0.5, burst: 9, rest: 0 },
 };
 
 export interface BotBrain {
@@ -40,6 +44,8 @@ export interface BotBrain {
   lastPos: Vec3;
   noiseT: number;
   aimHead: boolean;
+  /** Burst rhythm: positive = firing time left, negative = resting time left. */
+  burstClock: number;
   rand: () => number;
   yaw: number;
   pitch: number;
@@ -48,7 +54,7 @@ export interface BotBrain {
 export function createBrain(difficulty: BotDifficulty, seed: number): BotBrain {
   return {
     difficulty, target: null, seenFor: 0, strafeDir: 1, strafeTimer: 0, wander: null, stuckTimer: 0,
-    lastPos: { x: 0, y: 0, z: 0 }, noiseT: seed, aimHead: false, rand: makeRng(seed * 7919 + 13), yaw: 0, pitch: 0,
+    lastPos: { x: 0, y: 0, z: 0 }, noiseT: seed, aimHead: false, burstClock: 0, rand: makeRng(seed * 7919 + 13), yaw: 0, pitch: 0,
   };
 }
 
@@ -184,7 +190,10 @@ export function botThink(match: Match, f: Fighter, brain: BotBrain, dt: number):
     const offYaw = Math.abs(angleDiff(wantYaw, brain.yaw));
     const tolerance = w.slot === 'melee' ? 0.6 : 0.09 + 0.6 / Math.max(4, bestD);
     const inRange = w.slot !== 'melee' || bestD < (w.reach ?? 2) + 0.5;
-    input.fire = offYaw < tolerance && inRange;
+    // Fire in bursts with pauses, like a person re-aiming.
+    brain.burstClock -= dt;
+    if (brain.burstClock < -skill.rest) brain.burstClock = skill.burst * (0.6 + r() * 0.8);
+    input.fire = offYaw < tolerance && inRange && brain.burstClock > 0;
     input.ads = w.zoom >= 2 && bestD > 12;
   }
   const ws = f.weapons[f.slot];

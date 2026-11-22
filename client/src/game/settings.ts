@@ -10,7 +10,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   left: 'Strafe left',
   right: 'Strafe right',
   jump: 'Jump (hold to bunny-hop)',
-  crouch: 'Crouch / slide',
+  crouch: 'Crouch / slide (hold while landing to slide-hop)',
   walk: 'Walk (silent)',
   fire: 'Shoot / swing',
   aim: 'Aim down sights',
@@ -24,8 +24,11 @@ export const ACTION_LABELS: Record<Action, string> = {
 
 export type BotLevel = 'easy' | 'normal' | 'hard' | 'insane';
 
+export type FfaMap = 'blocktown' | 'neon-yard';
+
 export interface Settings {
   botLevel: BotLevel;
+  map: FfaMap;
   quality: import('./graphics.js').Quality;
   sensitivity: number;
   fov: number;
@@ -36,7 +39,8 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  botLevel: 'normal',
+  botLevel: 'easy',
+  map: 'blocktown',
   quality: 'high',
   sensitivity: 1,
   fov: 100,
@@ -49,8 +53,8 @@ export const DEFAULT_SETTINGS: Settings = {
     left: 'KeyA',
     right: 'KeyD',
     jump: 'Space',
-    crouch: 'KeyC',
-    walk: 'ShiftLeft',
+    crouch: 'ShiftLeft',
+    walk: 'KeyX',
     fire: 'Mouse0',
     aim: 'Mouse2',
     reload: 'KeyR',
@@ -62,7 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
 };
 
-const STORAGE_KEY = 'blockfire.settings.v2';
+const STORAGE_KEY = 'blockfire.settings.v3';
 
 /** Load settings from this browser. Falls back to defaults if storage is unavailable. */
 export function loadSettings(): Settings {

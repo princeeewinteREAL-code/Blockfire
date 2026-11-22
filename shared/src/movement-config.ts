@@ -7,7 +7,9 @@ export const MOVEMENT = {
   /** Gravity in m/s². */
   gravity: 25,
   /** Base run speed in m/s (weapon move speed multiplies this). */
-  runSpeed: 6,
+  runSpeed: 6.5,
+  /** Holding W+A or W+D ("strafing") is Krunker's sprint: this much faster. */
+  diagonalBoost: 1.15,
   /** Walk (silent) speed in m/s. */
   walkSpeed: 3,
   /** Crouch speed in m/s. */
@@ -17,7 +19,7 @@ export const MOVEMENT = {
   /** How quickly you reach full speed on the ground. */
   groundAccel: 12,
   /** Ground friction. */
-  friction: 8,
+  friction: 7,
   /** Below this speed, friction acts as if you were moving this fast (stops you crisply). */
   stopSpeed: 1.5,
   /** Air acceleration used for air strafing. */
@@ -25,16 +27,29 @@ export const MOVEMENT = {
   /** Cap on "wish speed" in the air — the classic trick that makes strafing gain speed. */
   airWishCap: 0.8,
   /** Hard cap on horizontal speed in m/s. */
-  maxSpeed: 14,
+  maxSpeed: 16,
+  /** Air control: holding W in the air turns your momentum toward where you look (radians/s). */
+  airTurn: 2.6,
+
+  /** Bunny hop: each hop that leaves the ground the instant you land multiplies speed by this… */
+  hopGain: 1.045,
+  /** …up to this multiple of run speed. */
+  hopCap: 1.35,
 
   /** Slide: speed becomes at least runSpeed × this. */
-  slideBoost: 1.5,
+  slideBoost: 1.45,
+  /** Slide-hop chain: landing straight into a slide multiplies your speed by this. */
+  slideChainGain: 1.1,
   /** Slide length in seconds. */
-  slideDuration: 0.8,
-  /** Wait after a slide ends before the next one, in seconds. */
-  slideCooldown: 1.0,
+  slideDuration: 0.9,
+  /** Wait after a slide runs out before a fresh one. Chained slide-hops ignore it. */
+  slideCooldown: 0.5,
   /** Friction while sliding (much lower than normal). */
-  slideFriction: 0.5,
+  slideFriction: 0.55,
+  /** Slides follow your mouse: how fast the slide turns toward where you look (radians/s). */
+  slideTurn: 7,
+  /** Pressing crouch this long before landing still counts for a slide-hop (s). */
+  crouchBuffer: 0.25,
   /** Minimum speed needed to start a slide, in m/s. */
   slideMinSpeed: 3.5,
 

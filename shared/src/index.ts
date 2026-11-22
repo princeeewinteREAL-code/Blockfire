@@ -7,3 +7,4 @@ export * from './combat.js';
 export * from './match.js';
 export * from './bots.js';
 export { NEON_YARD } from './maps/neon-yard.js';
+export { BLOCKTOWN } from './maps/blocktown.js';
