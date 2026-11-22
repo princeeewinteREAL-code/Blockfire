@@ -90,6 +90,10 @@ export class Graphics {
   setSize(w: number, h: number): void {
     this.width = Math.max(1, w);
     this.height = Math.max(1, h);
+    // Very big screens (4K and up): cap the pixels drawn so the game stays smooth.
+    const pr = Math.min(this.profile.pixelRatio, Math.sqrt(4_200_000 / Math.max(1, this.width * this.height)));
+    this.renderer.setPixelRatio(pr);
+    this.composer?.setPixelRatio(pr);
     this.renderer.setSize(this.width, this.height, false);
     this.composer?.setSize(this.width, this.height);
   }
