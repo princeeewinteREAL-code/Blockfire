@@ -15,7 +15,7 @@
     <canvas id="view"></canvas>
 
     <!-- Main menu -->
-    <section id="menu" class="screen">
+    <section id="menu" class="zoomable screen">
       <div class="menu-panel">
         <h1 class="logo"><span>BLOCK</span><span class="fire">FIRE</span></h1>
         <p class="tag">Early build · online and vs bots</p>
@@ -51,7 +51,7 @@
     </section>
 
     <!-- In-game HUD -->
-    <section id="hud" hidden>
+    <section class="zoomable" id="hud" hidden>
       <div class="crosshair"></div>
       <div class="hud-top">
         <div id="timer" class="timer" hidden>0:00.00</div>
@@ -76,7 +76,7 @@
 
 
     <!-- Armory -->
-    <section id="armory" hidden>
+    <section class="zoomable" id="armory" hidden>
       <header class="arm-head">
         <button id="arm-back" class="btn btn-small">← Back</button>
         <h2>Armory</h2>
@@ -105,7 +105,7 @@
 
 
     <!-- Free For All HUD -->
-    <section id="ffa-hud" hidden>
+    <section class="zoomable" id="ffa-hud" hidden>
       <div class="hurt" id="f-hurt"></div>
       <div class="scope" id="f-scope" hidden></div>
       <div class="crosshair" id="f-cross"></div>
@@ -151,7 +151,7 @@
     </section>
 
     <!-- Match end -->
-    <section id="match-end" class="screen dim" hidden>
+    <section id="match-end" class="zoomable screen dim" hidden>
       <div class="sheet end">
         <p class="end-kicker">Match over</p>
         <h2 id="end-title">You win!</h2>
@@ -164,7 +164,7 @@
     </section>
 
     <!-- Pause -->
-    <section id="pause" class="screen dim" hidden>
+    <section id="pause" class="zoomable screen dim" hidden>
       <div class="menu-panel center">
         <h2>Paused</h2>
         <button id="resume" class="btn btn-primary">Resume</button>
@@ -176,7 +176,7 @@
     </section>
 
     <!-- Settings -->
-    <section id="settings" class="screen dim" hidden>
+    <section id="settings" class="zoomable screen dim" hidden>
       <div class="sheet">
         <h2>Settings</h2>
         <label class="row"><span>Graphics quality</span><select id="s-quality"></select><output></output></label>
@@ -196,7 +196,7 @@
     </section>
 
     <!-- Online -->
-    <section id="online" class="screen dim" hidden>
+    <section id="online" class="zoomable screen dim" hidden>
       <div class="sheet">
         <h2>Play Online</h2>
         <p class="note" id="o-server"></p>
@@ -229,7 +229,7 @@
     </section>
 
     <!-- Controls -->
-    <section id="controls" class="screen dim" hidden>
+    <section id="controls" class="zoomable screen dim" hidden>
       <div class="sheet">
         <h2>How to move</h2>
         <ul class="howto">
